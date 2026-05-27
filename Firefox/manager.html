@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Everything MD</title>
+  <link rel="stylesheet" href="lib/katex/katex.min.css">
+  <style>
+    /* ====== Base Reset ====== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #f6f7f9;
+      color: #1d1d1f;
+      line-height: 1.6;
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .hidden { display: none !important; }
+
+    /* ====== Top Toolbar ====== */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      height: 44px;
+      min-height: 44px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e7eb;
+      z-index: 100;
+    }
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .toolbar-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      white-space: nowrap;
+    }
+
+    .toolbar-center {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      padding: 0 12px;
+    }
+
+    .toolbar-center input {
+      width: 100%;
+      max-width: 320px;
+      padding: 5px 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      background: #f9fafb;
+      transition: border-color 0.15s;
+    }
+
+    .toolbar-center input:focus {
+      border-color: #1a73e8;
+      background: #ffffff;
+    }
+
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* ====== General Toolbar Buttons ====== */
+    .tb {
+      padding: 4px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      background: #ffffff;
+      color: #374151;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+      font-family: inherit;
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+
+    .tb:hover { background: #f9fafb; border-color: #b0b5bd; }
+    .tb:active { background: #f3f4f6; }
+
+    .tb-primary {
+      background: #1a73e8;
+      border-color: #1a73e8;
+      color: #ffffff;
+    }
+
+    .tb-primary:hover { background: #1557b0; border-color: #1557b0; }
+
+    /* ====== Main Container ====== */
+    .main-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ====== Sidebar ====== */
+    .sidebar {
+      width: 220px;
+      min-width: 220px;
+      background: #ffffff;
+      border-right: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: width 0.2s, min-width 0.2s;
+    }
+
+    .sidebar.collapsed {
+      width: 0;
+      min-width: 0;
+      border-right: none;
+    }
+
+    .user-badge {
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #6b7280;
+      border-bottom: 1px solid #f3f4f6;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-section:last-child {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .sidebar-section-title {
+      padding: 8px 14px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .empty-hint {
+      padding: 4px 14px;
+      font-size: 11px;
+      color: #d1d5db;
+    }
+
+    /* ====== Folder Tree ====== */
+    .folder-item {
+      user-select: none;
+    }
+
+    .folder-header {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px 3px 14px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #374151;
+      transition: background 0.1s;
+    }
+
+    .folder-header:hover {
+      background: #f9fafb;
+    }
+
+    .folder-toggle {
+      width: 14px;
+      text-align: center;
+      font-size: 10px;
+      color: #9ca3af;
+      flex-shrink: 0;
+    }
+
+    .folder-icon {
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    .folder-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .folder-actions {
+      display: none;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .folder-header:hover .folder-actions {
+      display: flex;
+    }
+
+    .icon-btn {
+      border: none;
+      background: none;
+      cursor: pointer;
+      padding: 1px 3px;
+      font-size: 11px;
+      color: #9ca3af;
+      border-radius: 2px;
+      line-height: 1;
+    }
+
+    .icon-btn:hover {
+      background: #e5e7eb;
+      color: #374151;
+    }
+
+    .folder-children {
+      padding-left: 12px;
+    }
+
+    /* ====== Document Item ====== */
+    .doc-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px 4px 18px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #4b5563;
+      transition: background 0.1s;
+      user-select: none;
+    }
+
+    .doc-item:hover {
+      background: #f3f4f6;
+    }
+
+    .doc-item.active {
+      background: #e8f0fe;
+      color: #1a73e8;
+      font-weight: 500;
+    }
+
+    .doc-icon {
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .doc-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ====== Editor Pane ====== */
+    .editor-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #e5e7eb;
+      min-width: 0;
+      background: #ffffff;
+    }
+
+    .editor-pane.collapsed {
+      display: none;
+    }
+
+    .editor-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-bottom: 1px solid #f3f4f6;
+      background: #fafbfc;
+    }
+
+    .doc-title-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1d1d1f;
+      background: transparent;
+      font-family: inherit;
+    }
+
+    .doc-title-input::placeholder {
+      color: #d1d5db;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px 10px;
+      border-bottom: 1px solid #f3f4f6;
+      background: #fafbfc;
+    }
+
+    .ed-btn {
+      border: 1px solid transparent;
+      background: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: 12px;
+      color: #6b7280;
+      border-radius: 3px;
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      line-height: 1.4;
+    }
+
+    .ed-btn:hover {
+      background: #f3f4f6;
+      border-color: #e5e7eb;
+      color: #374151;
+    }
+
+    .editor-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .line-numbers {
+      width: 36px;
+      padding: 10px 4px 10px 0;
+      text-align: right;
+      font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #d1d5db;
+      background: #fafbfc;
+      border-right: 1px solid #f3f4f6;
+      overflow: hidden;
+      pointer-events: none;
+      white-space: pre;
+      user-select: none;
+    }
+
+    #editorTextarea {
+      flex: 1;
+      resize: none;
+      border: none;
+      outline: none;
+      padding: 10px 14px;
+      font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #1f2937;
+      background: #ffffff;
+      tab-size: 2;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    #editorTextarea::placeholder {
+      color: #d1d5db;
+    }
+
+    /* ====== Preview Pane ====== */
+    .preview-pane {
+      flex: 1;
+      overflow-y: auto;
+      background: #f6f7f9;
+      min-width: 0;
+    }
+
+    .preview-inner {
+      max-width: 780px;
+      margin: 20px auto;
+      padding: 36px 44px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      min-height: calc(100% - 40px);
+    }
+
+    /* ====== Markdown Typography (md-body) ====== */
+    .md-body h1 { font-size: 26px; font-weight: 700; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
+    .md-body h2 { font-size: 22px; font-weight: 600; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #f0f1f3; }
+    .md-body h3 { font-size: 18px; font-weight: 600; margin: 24px 0 10px; }
+    .md-body h4 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+    .md-body h5 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; }
+    .md-body h6 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; color: #6b7280; }
+
+    .md-body p { margin: 10px 0; line-height: 1.7; font-size: 15px; }
+
+    .md-body a { color: #1a73e8; text-decoration: none; }
+    .md-body a:hover { text-decoration: underline; }
+
+    .md-body strong { font-weight: 600; }
+
+    .md-body blockquote {
+      margin: 12px 0;
+      padding: 8px 16px;
+      border-left: 3px solid #d1d5db;
+      color: #4b5563;
+      background: #f9fafb;
+    }
+
+    .md-body hr {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 24px 0;
+    }
+
+    .md-body ul, .md-body ol { margin: 8px 0; padding-left: 24px; }
+    .md-body li { margin: 4px 0; }
+    .md-body li > ul, .md-body li > ol { margin: 2px 0; }
+
+    .md-body code {
+      font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+      font-size: 0.88em;
+      background: #f3f4f6;
+      padding: 2px 5px;
+      border-radius: 3px;
+      color: #1f2937;
+    }
+
+    .md-body pre {
+      margin: 14px 0;
+      padding: 16px;
+      background: #f8f9fa;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    .md-body pre code {
+      background: none;
+      padding: 0;
+      border-radius: 0;
+      font-size: 13px;
+      color: #1f2937;
+    }
+
+    .md-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 14px;
+    }
+
+    .md-body th, .md-body td {
+      border: 1px solid #e5e7eb;
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    .md-body th {
+      background: #f9fafb;
+      font-weight: 600;
+    }
+
+    .md-body tr:nth-child(even) td { background: #fafbfc; }
+
+    .md-body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+
+    .md-body .katex-display {
+      margin: 16px 0;
+      overflow-x: auto;
+    }
+
+    /* ====== Highlight Marks ====== */
+    mark.hl-yellow { background: #fef3c7; padding: 1px 2px; border-radius: 2px; }
+    mark.hl-green  { background: #d1fae5; padding: 1px 2px; border-radius: 2px; }
+    mark.hl-blue   { background: #dbeafe; padding: 1px 2px; border-radius: 2px; }
+
+    /* ====== Empty State ====== */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: #9ca3af;
+    }
+
+    .empty-state p {
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    /* ====== Search Results Dropdown ====== */
+    .search-results {
+      position: fixed;
+      top: 44px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 340px;
+      max-height: 300px;
+      overflow-y: auto;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      z-index: 200;
+    }
+
+    .search-result-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #f3f4f6;
+      transition: background 0.1s;
+    }
+
+    .search-result-item:hover {
+      background: #f9fafb;
+    }
+
+    .search-result-item:last-child {
+      border-bottom: none;
+    }
+
+    .search-result-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1d1d1f;
+    }
+
+    .search-result-snippet {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .search-result-title mark,
+    .search-result-snippet mark {
+      background: #fef3c7;
+      padding: 0 1px;
+      border-radius: 1px;
+    }
+
+    .search-empty {
+      padding: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: #9ca3af;
+    }
+
+    /* ====== Highlight Floating Bubble ====== */
+    .highlight-bubble {
+      position: absolute;
+      display: flex;
+      gap: 4px;
+      padding: 4px 6px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      z-index: 300;
+    }
+
+    .hl-btn {
+      border: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 24px;
+      text-align: center;
+      transition: opacity 0.1s;
+    }
+
+    .hl-btn:hover { opacity: 0.7; }
+    .hl-btn.hl-yellow { background: #fef3c7; color: #92400e; }
+    .hl-btn.hl-green  { background: #d1fae5; color: #065f46; }
+    .hl-btn.hl-blue   { background: #dbeafe; color: #1e40af; }
+
+    /* ====== Full-screen Drag Overlay ====== */
+    .drag-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(26, 115, 232, 0.06);
+      border: 3px dashed #1a73e8;
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .drag-overlay-inner {
+      background: #ffffff;
+      padding: 20px 36px;
+      border-radius: 4px;
+      border: 1px solid #e5e7eb;
+      text-align: center;
+    }
+
+    .drag-overlay-inner p:first-child {
+      font-size: 36px;
+      margin-bottom: 8px;
+    }
+
+    .drag-overlay-inner p:nth-child(2) {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a73e8;
+    }
+
+    .drag-overlay-inner p:nth-child(3) {
+      font-size: 12px;
+      color: #5f6368;
+      margin-top: 4px;
+    }
+
+    /* ====== Responsive Breakpoints ====== */
+    @media (max-width: 900px) {
+      .sidebar { width: 180px; min-width: 180px; }
+    }
+
+    @media (max-width: 700px) {
+      .sidebar { width: 0; min-width: 0; border-right: none; }
+      .editor-pane { display: none; }
+    }
+
+    /* ====== Print Styles (PDF Export) ====== */
+    @media print {
+      body { background: #ffffff; overflow: visible; }
+
+      .toolbar, .sidebar, .editor-pane,
+      .highlight-bubble, .drag-overlay, .search-results { display: none !important; }
+
+      .main-container { display: block; overflow: visible; }
+
+      .preview-pane {
+        overflow: visible;
+        background: #ffffff;
+      }
+
+      .preview-inner {
+        max-width: 100%;
+        margin: 0;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+      }
+
+      .md-body pre {
+        border: 1px solid #ccc;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        page-break-inside: avoid;
+      }
+
+      .md-body table { page-break-inside: avoid; }
+
+      .md-body h1, .md-body h2, .md-body h3,
+      .md-body h4, .md-body h5, .md-body h6 { page-break-after: avoid; }
+
+      .md-body img { page-break-inside: avoid; }
+
+      a[href]::after { content: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <button class="tb" id="toggleSidebarBtn" title="Toggle Sidebar">☰</button>
+      <span class="toolbar-title">Everything MD</span>
+    </div>
+    <div class="toolbar-center">
+      <input type="text" id="searchInput" placeholder="Search document title or content...">
+    </div>
+    <div class="toolbar-right">
+      <button class="tb" id="newDocBtn">+ Document</button>
+      <button class="tb" id="newFolderBtn">+ Folder</button>
+      <button class="tb" id="importBtn">Import</button>
+      <button class="tb" id="bookmarkBtn" title="Toggle Bookmark">Bookmark</button>
+      <button class="tb" id="toggleViewBtn" title="Toggle Edit/Preview">Split</button>
+      <button class="tb" id="downloadMdBtn">↓ MD</button>
+      <button class="tb tb-primary" id="exportPdfBtn">Export PDF</button>
+    </div>
+  </div>
+
+  <!-- Main Content Area -->
+  <div class="main-container">
+
+    <!-- Left Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="user-badge" id="userBadge">Offline Local User</div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Quick Bookmarks</div>
+        <div id="bookmarkList"></div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">Folders</div>
+        <div id="folderTree"></div>
+      </div>
+    </aside>
+
+    <!-- Editor Pane -->
+    <div class="editor-pane" id="editorPane">
+      <div class="editor-header">
+        <input type="text" class="doc-title-input" id="docTitleInput" placeholder="Document title...">
+      </div>
+      <div class="editor-toolbar">
+        <button class="ed-btn" id="boldBtn" title="Bold (Ctrl+B)"><b>B</b></button>
+        <button class="ed-btn" id="italicBtn" title="Italic (Ctrl+I)"><i>I</i></button>
+        <button class="ed-btn" id="codeBtn" title="Code">&lt;/&gt;</button>
+        <button class="ed-btn" id="linkBtn" title="Link">Link</button>
+        <button class="ed-btn" id="latexBtn" title="LaTeX Formula">Math</button>
+      </div>
+      <div class="editor-body">
+        <div class="line-numbers" id="lineNumbers">1</div>
+        <textarea id="editorTextarea" placeholder="Start writing Markdown..." spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <!-- Preview Pane -->
+    <div class="preview-pane" id="previewPane">
+      <div class="preview-inner">
+        <div class="md-body" id="mdBody">
+          <div class="empty-state" id="emptyState">
+                        <p style="font-size: 15px; font-weight: 600; color: #374151;">Select or create a document to start editing</p>
+            <p style="font-size: 12px; color: #9ca3af; margin-top: 6px;">
+              Click the document list on the left, or use the <b>+ Document</b> / <b>Import</b> buttons in the toolbar to create a new document.<br>
+              You can also directly drag and drop <b>.md</b> files into this window.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Search Results Overlay -->
+  <div id="searchResults" class="search-results hidden"></div>
+
+  <!-- Highlight Floating Bubble -->
+  <div id="highlightBubble" class="highlight-bubble hidden">
+    <button class="hl-btn hl-yellow" data-color="yellow">A</button>
+    <button class="hl-btn hl-green" data-color="green">A</button>
+    <button class="hl-btn hl-blue" data-color="blue">A</button>
+  </div>
+
+  <!-- Full-screen Drag Prompt Overlay -->
+  <div id="dragOverlay" class="drag-overlay">
+    <div class="drag-overlay-inner">
+            <p>Release mouse to import Markdown</p>
+      <p>Supports .md / .markdown / .txt files</p>
+    </div>
+  </div>
+
+  <!-- Hidden File Input -->
+  <input type="file" id="fileInput" accept=".md,.markdown,.txt,image/*" multiple style="display: none;">
+
+  <!-- Third-party libraries -->
+  <script src="lib/marked.min.js"></script>
+  <script src="lib/katex/katex.min.js"></script>
+  <script src="lib/katex/auto-render.min.js"></script>
+  <script src="lib/jszip.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

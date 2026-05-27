@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Everything MD</title>
+  <style>
+    body {
+      width: 260px;
+      padding: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #ffffff;
+      color: #202124;
+      margin: 0;
+    }
+
+    /* Top Header Area */
+    .header {
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #f1f3f4;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #202124;
+      margin: 0;
+    }
+
+    .header p {
+      font-size: 10px;
+      color: #5f6368;
+      margin: 0;
+      margin-top: 2px;
+    }
+
+    /* General Panel */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Configuration Group */
+    .settings-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .setting-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #3c4043;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .setting-item input[type="checkbox"] {
+      margin: 0;
+      cursor: pointer;
+    }
+
+    /* Simple Flat Button */
+    .btn {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      background-color: #ffffff;
+      color: #3c4043;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+      transition: background-color 0.15s, border-color 0.15s;
+      outline: none;
+    }
+
+    .btn:hover {
+      background-color: #f8f9fa;
+      border-color: #cdd1d5;
+    }
+
+    .btn:active {
+      background-color: #f1f3f4;
+    }
+
+    .btn-primary {
+      background-color: #1a73e8;
+      border-color: #1a73e8;
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background-color: #1557b0;
+      border-color: #1557b0;
+    }
+
+    .btn-primary:active {
+      background-color: #174ea6;
+    }
+
+    .btn-secondary {
+      background-color: #ffffff;
+      border-color: #dadce0;
+    }
+
+    /* Loading State */
+    .loading-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 0;
+      gap: 8px;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #f1f3f4;
+      border-radius: 50%;
+      border-top-color: #1a73e8;
+      animation: spin 0.8s linear infinite;
+    }
+
+    .status-text {
+      font-size: 10px;
+      color: #5f6368;
+    }
+
+    /* Status Feedback Card */
+    .status-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 4px 0;
+      gap: 6px;
+    }
+
+    .status-icon {
+      font-size: 24px;
+      margin-bottom: 2px;
+    }
+
+    .status-icon-success {
+      color: #137333;
+    }
+
+    .status-icon-error {
+      color: #c5221f;
+    }
+
+    .status-icon-warning {
+      color: #b06000;
+    }
+
+    .status-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #202124;
+    }
+
+    .status-desc {
+      font-size: 10px;
+      color: #5f6368;
+      line-height: 1.4;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background-color: #e8eaed;
+      margin: 12px 0 8px;
+    }
+
+    /* Drag/Upload Area */
+    .upload-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Everything MD</h1>
+    <p>Universal Markdown Manager</p>
+  </div>
+
+  <!-- 1. Ready Panel -->
+  <div id="readyPanel" class="panel">
+    <div class="settings-group">
+      <label class="setting-item">
+        <input type="checkbox" id="metadataToggle" checked>
+        <span>Include Document Metadata (Time and Link)</span>
+      </label>
+    </div>
+    <button id="managerBtn" class="btn btn-primary">Extract & Save to Manager</button>
+    <button id="exportBtn" class="btn btn-secondary">Download Markdown File</button>
+    <div class="divider" style="margin: 4px 0;"></div>
+    <button id="openManagerReadyBtn" class="btn btn-primary" style="background-color: #0f9d58; border-color: #0f9d58;">Open Everything MD</button>
+  </div>
+
+  <!-- 2. Loading Panel -->
+  <div id="loadingPanel" class="panel hidden">
+    <div class="loading-wrapper">
+      <div class="spinner"></div>
+      <span id="statusText" class="status-text">Exporting...</span>
+    </div>
+  </div>
+
+  <!-- 3. Success Export Panel -->
+  <div id="successPanel" class="panel hidden">
+    <div class="status-card">
+            <span class="status-title">Export Successful</span>
+      <span id="successDesc" class="status-desc">File has been converted to Markdown and started downloading.</span>
+    </div>
+    <button id="successCloseBtn" class="btn btn-secondary">OK</button>
+  </div>
+
+  <!-- 4. Error Panel -->
+  <div id="errorPanel" class="panel hidden">
+    <div class="status-card">
+            <span class="status-title">Export Failed</span>
+      <span id="errorDesc" class="status-desc">An unknown error occurred.</span>
+    </div>
+    <div style="display: flex; gap: 6px;">
+      <button id="errorBackBtn" class="btn btn-secondary" style="flex: 1;">Back</button>
+      <button id="errorRetryBtn" class="btn btn-primary" style="flex: 1.5;">Retry</button>
+    </div>
+  </div>
+
+  <!-- 5. Invalid Page Panel -->
+  <div id="invalidPagePanel" class="panel hidden">
+    <div class="status-card">
+            <span class="status-title">Please use on Gemini page</span>
+      <span class="status-desc">To capture conversations, please switch to the official Google Gemini conversation tab.</span>
+    </div>
+    <button id="openGeminiBtn" class="btn btn-primary">Open Gemini Website</button>
+    <div class="divider" style="margin: 4px 0;"></div>
+    <button id="managerBtnInvalid" class="btn btn-primary" style="background-color: #0f9d58; border-color: #0f9d58;">Open Everything MD</button>
+  </div>
+
+
+
+  <script src="popup.js"></script>
+</body>
+</html>
