@@ -499,6 +499,80 @@
     mark.hl-green  { background: #d1fae5; padding: 1px 2px; border-radius: 2px; }
     mark.hl-blue   { background: #dbeafe; padding: 1px 2px; border-radius: 2px; }
 
+    /* ====== Image Interaction & Toolbar ====== */
+    .md-body img {
+      transition: transform 0.2s, box-shadow 0.2s, outline 0.2s;
+      cursor: grab;
+      position: relative;
+    }
+    .md-body img:hover {
+      transform: scale(1.02);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .md-body img.active {
+      outline: 3px solid #1a73e8;
+      box-shadow: 0 6px 16px rgba(26,115,232,0.2);
+    }
+    .md-body img.dragging {
+      opacity: 0.5;
+      cursor: grabbing;
+    }
+
+    .drop-indicator {
+      height: 3px;
+      background-color: #1a73e8;
+      border-radius: 2px;
+      margin: 8px 0;
+      position: relative;
+    }
+    .drop-indicator::before {
+      content: '';
+      position: absolute;
+      left: -4px; top: -3px;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #1a73e8;
+    }
+
+    .image-toolbar {
+      position: absolute;
+      display: flex;
+      gap: 4px;
+      padding: 6px;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(229, 231, 235, 0.8);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      z-index: 400;
+      transition: opacity 0.2s;
+    }
+    .image-toolbar.hidden {
+      display: none;
+    }
+    .img-tb-btn {
+      border: none;
+      background: #ffffff;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: #374151;
+      transition: background 0.15s, color 0.15s;
+    }
+    .img-tb-btn:hover {
+      background: #f3f4f6;
+      color: #1a73e8;
+    }
+    .img-tb-btn.danger:hover {
+      color: #dc2626;
+      background: #fee2e2;
+    }
+
     /* ====== Empty State ====== */
     .empty-state {
       text-align: center;
@@ -772,6 +846,13 @@
     <button class="hl-btn hl-yellow" data-color="yellow">A</button>
     <button class="hl-btn hl-green" data-color="green">A</button>
     <button class="hl-btn hl-blue" data-color="blue">A</button>
+  </div>
+
+  <!-- Image Action Toolbar -->
+  <div id="imageToolbar" class="image-toolbar hidden">
+    <button class="img-tb-btn" id="imgBtnTop" title="Move to Top">⬆️</button>
+    <button class="img-tb-btn" id="imgBtnBottom" title="Move to Bottom">⬇️</button>
+    <button class="img-tb-btn danger" id="imgBtnDelete" title="Delete Image">🗑️</button>
   </div>
 
   <!-- Full-screen Drag Prompt Overlay -->

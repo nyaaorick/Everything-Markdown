@@ -1409,14 +1409,21 @@ const Manager = (() => {
 
     dom.mdBody.innerHTML = finalHtml;
 
-    // 4. Lazy-load local assets
-    const images = dom.mdBody.querySelectorAll('img[src^="local://"]');
+    // 4. Lazy-load local assets and attach info for interaction
+    const images = dom.mdBody.querySelectorAll('img');
     images.forEach(async (img) => {
-      const assetId = img.getAttribute('src').replace('local://', '');
-      const base64Data = await Storage.getAsset(assetId);
-      if (base64Data) {
-        img.src = base64Data;
+      const originalSrc = img.getAttribute('src');
+      img.dataset.mdSrc = originalSrc;
+      img.dataset.mdAlt = img.getAttribute('alt') || '';
+      if (originalSrc.startsWith('local://')) {
+        const assetId = originalSrc.replace('local://', '');
+        const base64Data = await Storage.getAsset(assetId);
+        if (base64Data) {
+          img.src = base64Data;
+        }
       }
+      // Setup image interaction
+      img.setAttribute('draggable', 'true');
     });
   }
 
@@ -1445,6 +1452,187 @@ const Manager = (() => {
     renderMarkdown(content);
     await Highlight.applyHighlightsToDOM(dom.mdBody);
   }
+
+  // --- Image Interaction Logic (Toolbar & Drag-and-Drop) ---
+  let _activeImage = null;
+
+  function hideImageToolbar() {
+    const toolbar = document.getElementById('imageToolbar');
+    if (toolbar) toolbar.classList.add('hidden');
+    if (_activeImage) {
+      _activeImage.classList.remove('active');
+      _activeImage = null;
+    }
+  }
+
+  function showImageToolbar(img) {
+    if (_activeImage === img) return;
+    hideImageToolbar();
+    _activeImage = img;
+    img.classList.add('active');
+
+    let toolbar = document.getElementById('imageToolbar');
+    toolbar.classList.remove('hidden');
+
+    // Position toolbar in the top-right corner of the image
+    const rect = img.getBoundingClientRect();
+    const bodyWidth = document.body.clientWidth;
+    
+    toolbar.style.top = `${rect.top + 8}px`;
+    toolbar.style.left = 'auto';
+    toolbar.style.right = `${bodyWidth - rect.right + 8}px`;
+  }
+
+  function getImageMarkdownSyntax(img) {
+    const alt = img.dataset.mdAlt || '';
+    const src = img.dataset.mdSrc || '';
+    return `![${alt}](${src})`;
+  }
+
+  function replaceImageMarkdown(img, action) {
+    if (!_activeDocId) return;
+    const syntax = getImageMarkdownSyntax(img);
+    let content = Editor.getContent();
+    
+    // Find the syntax in the content
+    const idx = content.indexOf(syntax);
+    if (idx === -1) return; // not found
+    
+    content = content.replace(syntax, '');
+    content = content.trim();
+
+    if (action === 'top') {
+      content = syntax + '\n\n' + content;
+    } else if (action === 'bottom') {
+      content = content + '\n\n' + syntax;
+    } // 'delete' does nothing else
+
+    Editor.setContent(content);
+    onContentChange(content);
+    hideImageToolbar();
+  }
+
+  // Setup Image Interactions
+  dom.mdBody.addEventListener('click', (e) => {
+    if (e.target.tagName === 'IMG') {
+      showImageToolbar(e.target);
+    } else {
+      hideImageToolbar();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const toolbar = document.getElementById('imageToolbar');
+    if (toolbar && !toolbar.contains(e.target) && e.target.tagName !== 'IMG') {
+      hideImageToolbar();
+    }
+  });
+  
+  dom.previewPane.addEventListener('scroll', hideImageToolbar);
+
+  document.getElementById('imgBtnTop')?.addEventListener('click', () => {
+    if (_activeImage) replaceImageMarkdown(_activeImage, 'top');
+  });
+  document.getElementById('imgBtnBottom')?.addEventListener('click', () => {
+    if (_activeImage) replaceImageMarkdown(_activeImage, 'bottom');
+  });
+  document.getElementById('imgBtnDelete')?.addEventListener('click', () => {
+    if (_activeImage) replaceImageMarkdown(_activeImage, 'delete');
+  });
+
+  // Handle Internal Drag and Drop
+  let _draggedImageSyntax = null;
+  let _dropIndicator = null;
+
+  dom.mdBody.addEventListener('dragstart', (e) => {
+    if (e.target.tagName === 'IMG') {
+      _draggedImageSyntax = getImageMarkdownSyntax(e.target);
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', _draggedImageSyntax);
+      setTimeout(() => e.target.classList.add('dragging'), 0);
+      hideImageToolbar();
+    }
+  });
+
+  dom.mdBody.addEventListener('dragend', (e) => {
+    if (e.target.tagName === 'IMG') {
+      e.target.classList.remove('dragging');
+      _draggedImageSyntax = null;
+      if (_dropIndicator) _dropIndicator.remove();
+    }
+  });
+
+  dom.mdBody.addEventListener('dragover', (e) => {
+    if (!_draggedImageSyntax) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    // Find the closest block element to show drop indicator
+    const target = e.target;
+    if (target !== dom.mdBody && !target.classList.contains('md-body')) {
+      const rect = target.getBoundingClientRect();
+      const isTop = (e.clientY - rect.top) < (rect.height / 2);
+      
+      if (!_dropIndicator) {
+        _dropIndicator = document.createElement('div');
+        _dropIndicator.className = 'drop-indicator';
+      }
+      
+      if (isTop) {
+        target.parentNode.insertBefore(_dropIndicator, target);
+      } else {
+        target.parentNode.insertBefore(_dropIndicator, target.nextSibling);
+      }
+    }
+  });
+
+  dom.mdBody.addEventListener('drop', (e) => {
+    if (!_draggedImageSyntax) return;
+    e.preventDefault();
+    e.stopPropagation(); // prevent global file drop
+    
+    if (_dropIndicator) {
+      let content = Editor.getContent();
+      const syntax = _draggedImageSyntax;
+      
+      // Remove original syntax
+      content = content.replace(syntax, '');
+      
+      // We need to insert the syntax into the DOM temporarily to find its new position, 
+      // but since we rebuild from markdown, it's easier to append to the end 
+      // or implement a rough text insertion based on block order.
+      // For simplicity and exact placement, we use the drop indicator's sibling
+      const nextSibling = _dropIndicator.nextElementSibling;
+      const prevSibling = _dropIndicator.previousElementSibling;
+      
+      // Rough mapping: find text of next sibling in content
+      if (nextSibling && nextSibling.textContent.trim()) {
+        const siblingText = nextSibling.textContent.trim().substring(0, 20);
+        const idx = content.indexOf(siblingText);
+        if (idx !== -1) {
+          content = content.substring(0, idx) + syntax + '\n\n' + content.substring(idx);
+        } else {
+          content += '\n\n' + syntax;
+        }
+      } else if (prevSibling && prevSibling.textContent.trim()) {
+        const siblingText = prevSibling.textContent.trim().substring(0, 20);
+        const idx = content.indexOf(siblingText);
+        if (idx !== -1) {
+          const insertIdx = idx + siblingText.length;
+          content = content.substring(0, insertIdx) + '\n\n' + syntax + '\n\n' + content.substring(insertIdx);
+        } else {
+          content += '\n\n' + syntax;
+        }
+      } else {
+         // fallback to top
+         content = syntax + '\n\n' + content;
+      }
+      
+      Editor.setContent(content.trim());
+      onContentChange(Editor.getContent());
+      _dropIndicator.remove();
+    }
+  });
 
   // Unified view multi-column mode setting
   function setViewMode(mode) {
