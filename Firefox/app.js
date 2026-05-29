@@ -238,7 +238,7 @@ const FolderTree = (() => {
   function render() {
     const treeContainer = document.getElementById('folderTree');
     if (!treeContainer) return;
-    treeContainer.innerHTML = '';
+    treeContainer.textContent = '';
 
     const folders = Storage.getFolders();
     const docs = Storage.getDocMeta();
@@ -513,7 +513,7 @@ const FolderTree = (() => {
   function renderBookmarks() {
     const listContainer = document.getElementById('bookmarkList');
     if (!listContainer) return;
-    listContainer.innerHTML = '';
+    listContainer.textContent = '';
 
     const docs = Storage.getDocMeta();
     const bookmarks = Object.values(docs).filter(d => d.isBookmarked);
@@ -847,16 +847,24 @@ const Search = (() => {
     }
 
     _resultsContainer.classList.remove('hidden');
-    _resultsContainer.innerHTML = '<div class="search-empty">Searching...</div>';
+    _resultsContainer.textContent = '';
+    const emptyMsg = document.createElement('div');
+    emptyMsg.className = 'search-empty';
+    emptyMsg.textContent = 'Searching...';
+    _resultsContainer.appendChild(emptyMsg);
 
     try {
       const results = await Storage.searchDocs(query);
       if (results.length === 0) {
-        _resultsContainer.innerHTML = '<div class="search-empty">No matching documents found</div>';
+        _resultsContainer.textContent = '';
+        const noMatchMsg = document.createElement('div');
+        noMatchMsg.className = 'search-empty';
+        noMatchMsg.textContent = 'No matching documents found';
+        _resultsContainer.appendChild(noMatchMsg);
         return;
       }
 
-      _resultsContainer.innerHTML = '';
+      _resultsContainer.textContent = '';
       results.forEach(doc => {
         const item = document.createElement('div');
         item.className = 'search-result-item';
@@ -867,11 +875,13 @@ const Search = (() => {
 
         const title = document.createElement('div');
         title.className = 'search-result-title';
-        title.innerHTML = highlightedTitle;
+        const titleDoc = new DOMParser().parseFromString(highlightedTitle, "text/html");
+        title.replaceChildren(...titleDoc.body.childNodes);
 
         const snippet = document.createElement('div');
         snippet.className = 'search-result-snippet';
-        snippet.innerHTML = highlightedSnippet;
+        const snippetDoc = new DOMParser().parseFromString(highlightedSnippet, "text/html");
+        snippet.replaceChildren(...snippetDoc.body.childNodes);
 
         item.appendChild(title);
         item.appendChild(snippet);
@@ -889,7 +899,12 @@ const Search = (() => {
       });
     } catch (err) {
       console.error('Full-text search error:', err);
-      _resultsContainer.innerHTML = `<div class="search-empty" style="color: #dc2626;">Search failed: ${escapeHTML(err.message)}</div>`;
+      _resultsContainer.textContent = '';
+      const errMsg = document.createElement('div');
+      errMsg.className = 'search-empty';
+      errMsg.style.color = '#dc2626';
+      errMsg.textContent = `Search failed: ${err.message}`;
+      _resultsContainer.appendChild(errMsg);
     }
   }
 
@@ -1301,7 +1316,7 @@ const Manager = (() => {
       localStorage.removeItem('mdm_active_doc_id');
       dom.emptyState.classList.remove('hidden');
       dom.editorPane.classList.add('collapsed');
-      dom.mdBody.innerHTML = '';
+      dom.mdBody.textContent = '';
       dom.docTitleInput.value = '';
       
       // Update sub-states
@@ -1407,7 +1422,8 @@ const Manager = (() => {
       );
     });
 
-    dom.mdBody.innerHTML = finalHtml;
+    const finalDoc = new DOMParser().parseFromString(finalHtml, "text/html");
+    dom.mdBody.replaceChildren(...finalDoc.body.childNodes);
 
     // 4. Lazy-load local assets and attach info for interaction
     const images = dom.mdBody.querySelectorAll('img');

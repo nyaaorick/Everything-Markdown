@@ -9,5 +9,13 @@
   },
   "action": {
     "default_popup": "popup.html"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "everything-md@nyaaorick.com",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
   }
 }
