@@ -353,18 +353,29 @@ const FolderTree = (() => {
         deleteBtn.className = 'icon-btn';
         deleteBtn.title = 'Delete folder';
         deleteBtn.textContent = 'Del';
+        let deleteBtnArmed = false;
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          if (confirm(`Are you sure you want to delete the folder "${folder.name}"?\nAfter deletion, its files and subfolders will be safely hoisted to the parent directory.`)) {
-            try {
-              await Storage.deleteFolder(folder.id);
-              _collapsedFolders.delete(folder.id);
-              saveCollapsed();
-              render();
-            } catch (err) {
-              console.error('Failed to delete folder', err);
-              alert('Delete failed: ' + err.message);
-            }
+          if (!deleteBtnArmed) {
+            deleteBtnArmed = true;
+            deleteBtn.style.color = '#ef4444'; // Turn red to arm
+            deleteBtn.style.fontWeight = 'bold';
+            return;
+          }
+          try {
+            await Storage.deleteFolder(folder.id);
+            _collapsedFolders.delete(folder.id);
+            saveCollapsed();
+            render();
+          } catch (err) {
+            console.error('Failed to delete folder', err);
+          }
+        });
+        deleteBtn.addEventListener('mouseleave', () => {
+          if (deleteBtnArmed) {
+            deleteBtnArmed = false;
+            deleteBtn.style.color = '';
+            deleteBtn.style.fontWeight = '';
           }
         });
 
@@ -438,23 +449,48 @@ const FolderTree = (() => {
         deleteDoc.className = 'icon-btn';
         deleteDoc.title = 'Delete document';
         deleteDoc.textContent = 'Del';
+        let deleteDocArmed = false;
         deleteDoc.addEventListener('click', async (e) => {
           e.stopPropagation();
-          if (confirm(`Are you sure you want to delete the document "${doc.title}"? This operation cannot be undone.`)) {
-            try {
-              await Storage.deleteDoc(doc.id);
-              render();
-              // If the deleted document is the currently opened one, switch back to blank state
-              if (_activeDocId === doc.id && _onSelectDocCallback) {
-                _onSelectDocCallback(null);
-              }
-            } catch (err) {
-              console.error('Failed to delete document', err);
-              alert('Delete failed: ' + err.message);
+          if (!deleteDocArmed) {
+            deleteDocArmed = true;
+            deleteDoc.style.color = '#ef4444'; // Turn red to arm
+            deleteDoc.style.fontWeight = 'bold';
+            return;
+          }
+          try {
+            await Storage.deleteDoc(doc.id);
+            render();
+            // If the deleted document is the currently opened one, switch back to blank state
+            if (_activeDocId === doc.id && _onSelectDocCallback) {
+              _onSelectDocCallback(null);
             }
+          } catch (err) {
+            console.error('Failed to delete document', err);
+          }
+        });
+        deleteDoc.addEventListener('mouseleave', () => {
+          if (deleteDocArmed) {
+            deleteDocArmed = false;
+            deleteDoc.style.color = '';
+            deleteDoc.style.fontWeight = '';
           }
         });
 
+        const bookmarkDoc = document.createElement('button');
+        bookmarkDoc.className = 'icon-btn';
+        bookmarkDoc.title = 'Toggle Bookmark';
+        bookmarkDoc.textContent = doc.isBookmarked ? '★' : '☆';
+        if (doc.isBookmarked) {
+          bookmarkDoc.style.color = '#e0a800';
+        }
+        bookmarkDoc.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await Storage.toggleBookmark(doc.id);
+          render();
+        });
+
+        actions.appendChild(bookmarkDoc);
         actions.appendChild(deleteDoc);
 
         docEl.appendChild(icon);
@@ -466,7 +502,7 @@ const FolderTree = (() => {
         docEl.addEventListener('mouseleave', () => { actions.style.display = 'none'; });
 
         // Click to open document, click again to rename
-        docEl.addEventListener('click', (e) => {
+        docEl.addEventListener('click', async (e) => {
           if (e.target.closest('.icon-btn')) return;
           const isAlreadyActive = docEl.classList.contains('active');
 
@@ -969,7 +1005,7 @@ const Highlight = (() => {
     // Bind click deletion mechanism for highlight marks
     const mdBody = document.getElementById('mdBody');
     if (mdBody) {
-      mdBody.addEventListener('click', handleDeleteHighlightClick);
+      mdBody.addEventListener('dblclick', handleDeleteHighlightDblClick);
     }
   }
 
@@ -1161,20 +1197,18 @@ const Highlight = (() => {
     });
   }
 
-  // Click highlight tag to delete highlight mark
-  async function handleDeleteHighlightClick(e) {
+  // Double click highlight tag to delete highlight mark
+  async function handleDeleteHighlightDblClick(e) {
     const mark = e.target.closest('mark[data-hl-id]');
     if (!mark || !_activeDocId) return;
 
     e.stopPropagation();
-    if (confirm(`Are you sure you want to remove this highlight data?\n"${mark.textContent}"`)) {
-      const hlId = mark.dataset.hlId;
-      await Storage.removeHighlight(_activeDocId, hlId);
+    const hlId = mark.dataset.hlId;
+    await Storage.removeHighlight(_activeDocId, hlId);
 
-      // Notify rendering update
-      if (_onHighlightChangedCallback) {
-        _onHighlightChangedCallback();
-      }
+    // Notify rendering update
+    if (_onHighlightChangedCallback) {
+      _onHighlightChangedCallback();
     }
   }
 
@@ -1208,7 +1242,6 @@ const Manager = (() => {
     newFolderBtn: document.getElementById('newFolderBtn'),
     importBtn: document.getElementById('importBtn'),
     fileInput: document.getElementById('fileInput'),
-    bookmarkBtn: document.getElementById('bookmarkBtn'),
     toggleViewBtn: document.getElementById('toggleViewBtn'),
     downloadMdBtn: document.getElementById('downloadMdBtn'),
     exportPdfBtn: document.getElementById('exportPdfBtn'),
@@ -1675,17 +1708,6 @@ const Manager = (() => {
     Editor.updateLineNumbers();
   }
 
-  // Toggle bookmark star button visual color
-  function updateBookmarkButton(isBookmarked) {
-    if (isBookmarked) {
-      dom.bookmarkBtn.style.color = '#e0a800'; // Yellow highlight
-      dom.bookmarkBtn.style.fontWeight = 'bold';
-    } else {
-      dom.bookmarkBtn.style.color = '';
-      dom.bookmarkBtn.style.fontWeight = '';
-    }
-  }
-
   // Bind global toolbar events
   function bindToolbarEvents() {
     // Toggle sidebar collapse/expand
@@ -1727,14 +1749,6 @@ const Manager = (() => {
         }
         await processFiles(fileArr);
       }
-    });
-
-    // Bookmark toggle button
-    dom.bookmarkBtn.addEventListener('click', async () => {
-      if (!_activeDocId) return;
-      const isStarred = await Storage.toggleBookmark(_activeDocId);
-      updateBookmarkButton(isStarred);
-      FolderTree.render();
     });
 
     // View mode toggle (cycle between "Dual pane -> Edit only -> Preview only")
