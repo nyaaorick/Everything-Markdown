@@ -122,9 +122,40 @@ async function startManagerProcess() {
     const mdText = await extractMarkdown();
 
     statusText.textContent = "Opening notes manager and importing conversation...";
-    await browserAPI.storage.local.set({ activeMD: mdText });
+    
+    // Direct DB write approach
+    const data = await browserAPI.storage.local.get(['mdm_docs']);
+    const docs = data.mdm_docs || {};
+    
+    const id = 'd_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
+    let title = 'Gemini Export Conversation';
+    const match = mdText.match(/^#\s+(.+)$/m);
+    if (match && match[1]) {
+      title = match[1].trim();
+    } else {
+      const now = new Date();
+      title = `Gemini Conversation ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+    
+    const nowTime = Date.now();
+    docs[id] = {
+      id,
+      title,
+      folderId: null,
+      isBookmarked: false,
+      createdAt: nowTime,
+      updatedAt: nowTime
+    };
+    
+    await browserAPI.storage.local.set({
+      mdm_docs: docs,
+      [`mdm_content_${id}`]: mdText
+    });
+    
+    localStorage.setItem('mdm_active_doc_id', id);
+    localStorage.setItem('mdm_view_mode', 'dual');
 
-    const managerUrl = browserAPI.runtime.getURL("manager.html#import-active");
+    const managerUrl = browserAPI.runtime.getURL("manager.html");
     await browserAPI.tabs.create({ url: managerUrl, active: true });
 
     setTimeout(() => {
