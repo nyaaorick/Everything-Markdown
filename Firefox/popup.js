@@ -123,10 +123,17 @@ async function startManagerProcess() {
 
     statusText.textContent = "Opening notes manager and importing conversation...";
     
-    // Direct DB write approach
-    const data = await browserAPI.storage.local.get(['mdm_docs']);
-    const docs = data.mdm_docs || {};
-    
+    // IndexedDB approach via Dexie
+    const db = new Dexie('EverythingMD_DB');
+    db.version(1).stores({
+      folders: 'id, parentId',
+      docs: 'id, folderId',
+      contents: 'id',
+      highlights: 'id, docId',
+      assets: 'id'
+    });
+    await db.open();
+
     const id = 'd_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
     let title = 'Gemini Export Conversation';
     const match = mdText.match(/^#\s+(.+)$/m);
@@ -138,7 +145,7 @@ async function startManagerProcess() {
     }
     
     const nowTime = Date.now();
-    docs[id] = {
+    const meta = {
       id,
       title,
       folderId: null,
@@ -147,9 +154,9 @@ async function startManagerProcess() {
       updatedAt: nowTime
     };
     
-    await browserAPI.storage.local.set({
-      mdm_docs: docs,
-      [`mdm_content_${id}`]: mdText
+    await db.transaction('rw', db.docs, db.contents, async () => {
+      await db.docs.put(meta);
+      await db.contents.put({ id, content: mdText });
     });
     
     localStorage.setItem('mdm_active_doc_id', id);

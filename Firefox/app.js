@@ -5,173 +5,162 @@
 const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 
 const Storage = (() => {
-  // In-memory cache: folder tree + document metadata (excluding body content)
-  let _folders = {};   // { folderId: FolderObj }
-  let _docs = {};      // { docId: DocMetaObj }
+  const db = new Dexie('EverythingMD_DB');
+  db.version(1).stores({
+    folders: 'id, parentId',
+    docs: 'id, folderId',
+    contents: 'id',
+    highlights: 'id, docId',
+    assets: 'id'
+  });
 
-  // ====== Utility Functions ======
+  let _folders = {};
+  let _docs = {};
+
   function generateId(prefix = '') {
     return prefix + Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
   }
 
-  // ====== Initialization: load metadata from local storage into memory cache ======
   async function init() {
-    const data = await browserAPI.storage.local.get(['mdm_folders', 'mdm_docs']);
-    _folders = data.mdm_folders || {};
-    _docs = data.mdm_docs || {};
+    await db.open();
+    const folderArr = await db.folders.toArray();
+    const docArr = await db.docs.toArray();
+    _folders = {};
+    folderArr.forEach(f => _folders[f.id] = f);
+    _docs = {};
+    docArr.forEach(d => _docs[d.id] = d);
   }
 
-  // ====== Folder Operations ======
-  function getFolders() {
-    return { ..._folders };
-  }
+  function getFolders() { return { ..._folders }; }
 
   async function createFolder(name, parentId = null) {
     const id = generateId('f_');
-    const folder = {
-      id,
-      name,
-      parentId,
-      order: Date.now(),
-      createdAt: Date.now()
-    };
+    const folder = { id, name, parentId, order: Date.now(), createdAt: Date.now() };
+    await db.folders.put(folder);
     _folders[id] = folder;
-    await browserAPI.storage.local.set({ mdm_folders: _folders });
     return folder;
   }
 
   async function renameFolder(id, newName) {
     if (!_folders[id]) return;
+    await db.folders.update(id, { name: newName });
     _folders[id].name = newName;
-    await browserAPI.storage.local.set({ mdm_folders: _folders });
   }
 
   async function deleteFolder(id) {
     if (!_folders[id]) return;
-
-    // Hoist subfolders and subdocuments to the parent of the deleted folder
     const parentId = _folders[id].parentId;
-    Object.values(_folders).forEach(f => {
-      if (f.parentId === id) f.parentId = parentId;
-    });
-    Object.values(_docs).forEach(d => {
-      if (d.folderId === id) d.folderId = parentId;
-    });
-
+    
+    const subfs = await db.folders.where('parentId').equals(id).toArray();
+    for (const f of subfs) {
+      await db.folders.update(f.id, { parentId });
+      if (_folders[f.id]) _folders[f.id].parentId = parentId;
+    }
+    
+    const subdocs = await db.docs.where('folderId').equals(id).toArray();
+    for (const d of subdocs) {
+      await db.docs.update(d.id, { folderId: parentId });
+      if (_docs[d.id]) _docs[d.id].folderId = parentId;
+    }
+    
+    await db.folders.delete(id);
     delete _folders[id];
-    await browserAPI.storage.local.set({ mdm_folders: _folders, mdm_docs: _docs });
   }
 
-  // ====== Document Metadata Operations ======
-  function getDocMeta() {
-    return { ..._docs };
-  }
+  function getDocMeta() { return { ..._docs }; }
 
   async function getDocContent(id) {
-    const key = `mdm_content_${id}`;
-    const data = await browserAPI.storage.local.get(key);
-    return data[key] || '';
+    const record = await db.contents.get(id);
+    return record ? record.content : '';
   }
 
   async function createDoc(title, content = '', folderId = null) {
     const id = generateId('d_');
     const now = Date.now();
-    const meta = {
-      id,
-      title,
-      folderId,
-      isBookmarked: false,
-      createdAt: now,
-      updatedAt: now
-    };
-    _docs[id] = meta;
-    await browserAPI.storage.local.set({
-      mdm_docs: _docs,
-      [`mdm_content_${id}`]: content
+    const meta = { id, title, folderId, isBookmarked: false, createdAt: now, updatedAt: now };
+    
+    await db.transaction('rw', db.docs, db.contents, async () => {
+      await db.docs.put(meta);
+      await db.contents.put({ id, content });
     });
+    
+    _docs[id] = meta;
     return meta;
   }
 
   async function updateDocContent(id, content) {
     if (!_docs[id]) return;
-    _docs[id].updatedAt = Date.now();
-    await browserAPI.storage.local.set({
-      mdm_docs: _docs,
-      [`mdm_content_${id}`]: content
+    const now = Date.now();
+    await db.transaction('rw', db.docs, db.contents, async () => {
+      await db.docs.update(id, { updatedAt: now });
+      await db.contents.put({ id, content });
     });
+    _docs[id].updatedAt = now;
   }
 
   async function updateDocMeta(id, changes) {
     if (!_docs[id]) return;
-    Object.assign(_docs[id], changes, { updatedAt: Date.now() });
-    await browserAPI.storage.local.set({ mdm_docs: _docs });
+    changes.updatedAt = Date.now();
+    await db.docs.update(id, changes);
+    Object.assign(_docs[id], changes);
   }
 
   async function deleteDoc(id) {
     if (!_docs[id]) return;
+    await db.transaction('rw', db.docs, db.contents, db.highlights, async () => {
+      await db.docs.delete(id);
+      await db.contents.delete(id);
+      await db.highlights.where('docId').equals(id).delete();
+    });
     delete _docs[id];
-    await browserAPI.storage.local.set({ mdm_docs: _docs });
-    try {
-      await browserAPI.storage.local.remove([`mdm_content_${id}`, `mdm_hl_${id}`]);
-    } catch (e) {
-      console.warn('Storage cleanup non-critical error:', e);
-    }
   }
 
   async function toggleBookmark(id) {
     if (!_docs[id]) return false;
-    _docs[id].isBookmarked = !_docs[id].isBookmarked;
-    _docs[id].updatedAt = Date.now();
-    await browserAPI.storage.local.set({ mdm_docs: _docs });
-    return _docs[id].isBookmarked;
+    const newState = !_docs[id].isBookmarked;
+    const now = Date.now();
+    await db.docs.update(id, { isBookmarked: newState, updatedAt: now });
+    _docs[id].isBookmarked = newState;
+    _docs[id].updatedAt = now;
+    return newState;
   }
 
-  // ====== Highlight Operations ======
   async function getHighlights(docId) {
-    const key = `mdm_hl_${docId}`;
-    const data = await browserAPI.storage.local.get(key);
-    return data[key] || [];
+    return await db.highlights.where('docId').equals(docId).toArray();
   }
 
   async function addHighlight(docId, highlight) {
-    const highlights = await getHighlights(docId);
     highlight.id = generateId('hl_');
-    highlights.push(highlight);
-    await browserAPI.storage.local.set({ [`mdm_hl_${docId}`]: highlights });
+    highlight.docId = docId;
+    await db.highlights.put(highlight);
     return highlight;
   }
 
   async function removeHighlight(docId, highlightId) {
-    let highlights = await getHighlights(docId);
-    highlights = highlights.filter(h => h.id !== highlightId);
-    await browserAPI.storage.local.set({ [`mdm_hl_${docId}`]: highlights });
+    await db.highlights.delete(highlightId);
   }
 
-  // ====== Global Search ======
   async function searchDocs(query) {
     if (!query || !query.trim()) return [];
     const q = query.toLowerCase().trim();
     const results = [];
-
-    for (const doc of Object.values(_docs)) {
+    
+    await db.contents.each(record => {
+      const doc = _docs[record.id];
+      if (!doc) return;
       let score = 0;
-
-      // Title matches have higher weight
       if (doc.title.toLowerCase().includes(q)) score += 10;
-
-      // Body content match
-      const content = await getDocContent(doc.id);
-      if (content.toLowerCase().includes(q)) score += 5;
-
+      if (record.content.toLowerCase().includes(q)) score += 5;
+      
       if (score > 0) {
         results.push({
           ...doc,
           score,
-          snippet: _extractSnippet(content, q)
+          snippet: _extractSnippet(record.content, q)
         });
       }
-    }
-
+    });
+    
     return results.sort((a, b) => b.score - a.score);
   }
 
@@ -183,33 +172,42 @@ const Storage = (() => {
     return (start > 0 ? '...' : '') + content.substring(start, end) + (end < content.length ? '...' : '');
   }
 
-  // ====== Asset Pool Operations ======
-  async function saveAsset(base64Data, extension = 'png') {
+  function dataURLtoBlob(dataurl) {
+    const arr = dataurl.split(',');
+    const match = arr[0].match(/:(.*?);/);
+    const mime = match ? match[1] : '';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  }
+
+  async function saveAsset(data, extension = 'png') {
     const assetId = generateId('asset_') + '.' + extension;
-    const key = `mdm_asset_${assetId}`;
-    await browserAPI.storage.local.set({ [key]: base64Data });
+    let blob = data;
+    if (typeof data === 'string' && data.startsWith('data:')) {
+      blob = dataURLtoBlob(data);
+    }
+    await db.assets.put({ id: assetId, data: blob });
     return `local://${assetId}`;
   }
 
   async function getAsset(assetId) {
-    const key = `mdm_asset_${assetId}`;
-    const data = await browserAPI.storage.local.get(key);
-    return data[key] || null;
+    const record = await db.assets.get(assetId);
+    return record ? record.data : null;
   }
 
-  // ====== Public API ======
   return {
+    db,
     init,
     generateId,
-    // Folders
     getFolders, createFolder, renameFolder, deleteFolder,
-    // Documents
     getDocMeta, getDocContent, createDoc, updateDocContent, updateDocMeta, deleteDoc, toggleBookmark,
-    // Highlights
     getHighlights, addHighlight, removeHighlight,
-    // Search
     searchDocs,
-    // Assets
     saveAsset, getAsset
   };
 })();
@@ -1466,9 +1464,9 @@ const Manager = (() => {
       img.dataset.mdAlt = img.getAttribute('alt') || '';
       if (originalSrc.startsWith('local://')) {
         const assetId = originalSrc.replace('local://', '');
-        const base64Data = await Storage.getAsset(assetId);
-        if (base64Data) {
-          img.src = base64Data;
+        const blob = await Storage.getAsset(assetId);
+        if (blob) {
+          img.src = URL.createObjectURL(blob);
         }
       }
       // Setup image interaction
@@ -1780,16 +1778,11 @@ const Manager = (() => {
         for (const match of matches) {
           const localUri = match[1];
           const assetId = localUri.replace('local://', '');
-          const base64Data = await Storage.getAsset(assetId);
+          const blob = await Storage.getAsset(assetId);
           
-          if (base64Data) {
-            // Extract pure base64
-            const base64Content = base64Data.split(',')[1];
-            if (base64Content) {
-              assetsFolder.file(assetId, base64Content, {base64: true});
-              // Rewrite markdown link to relative asset path
-              content = content.replace(localUri, `assets/${assetId}`);
-            }
+          if (blob) {
+            assetsFolder.file(assetId, blob);
+            content = content.replace(localUri, `assets/${assetId}`);
           }
         }
         

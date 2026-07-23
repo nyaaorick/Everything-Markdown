@@ -26,7 +26,33 @@
       font-weight: 600;
       color: #202124;
       margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
+
+    .brand-icon {
+      position: relative;
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      flex-shrink: 0;
+    }
+    .brand-icon span {
+      position: absolute;
+      font-size: 12px;
+      line-height: 1;
+      user-select: none;
+      filter: drop-shadow(0 1px 1px rgba(0,0,0,0.1));
+    }
+    .brand-emoji-1 { top: 2px; left: 7px; z-index: 2; }
+    .brand-emoji-2 { bottom: 2px; left: 2px; z-index: 3; }
+    .brand-emoji-3 { bottom: 2px; right: 2px; z-index: 1; }
 
     .header p {
       font-size: 10px;
@@ -197,7 +223,14 @@
 </head>
 <body>
   <div class="header">
-    <h1>Everything MD</h1>
+    <h1>
+      <div class="brand-icon">
+        <span class="brand-emoji-1">🗂️</span>
+        <span class="brand-emoji-2">📝</span>
+        <span class="brand-emoji-3">✨</span>
+      </div>
+      Everything MD
+    </h1>
     <p>Universal Markdown Manager</p>
   </div>
 
@@ -257,6 +290,7 @@
 
 
 
+  <script src="lib/dexie.min.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
