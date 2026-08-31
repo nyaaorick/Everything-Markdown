@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/banner.svg" alt="Everything Markdown" width="820">
+<img src="docs/banner.png" alt="Everything Markdown" width="820">
 
 # Everything Markdown
 
