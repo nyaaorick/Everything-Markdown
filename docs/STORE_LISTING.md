@@ -121,12 +121,13 @@ chat, google, privacy
 - Support site: `https://github.com/nyaaorick/Everything-Markdown/issues`
 - License: MIT
 
-## Screenshots (upload from `docs/`)
+## Screenshots  (uploaded to AMO via API)
 
-| File | Caption |
-|------|---------|
-| `docs/screenshot.png` | CodeMirror 6 editor with live split-pane preview — tables, blockquotes and KaTeX math |
-| `docs/banner.png` | Everything Markdown — local-first Markdown workspace for Firefox |
+| Pos | File | Caption |
+|-----|------|---------|
+| 0 | `docs/screenshot.png` | CodeMirror 6 editor with a resizable live preview — headings, tables, blockquotes and KaTeX math |
+| 1 | `docs/screenshot-highlights.png` | Colour highlights on the preview, anchored to block + offset so they survive bold / italic / link edits |
+| 2 | `docs/screenshot-search.png` | Folder tree and instant full-text search across every note |
 
 ---
 

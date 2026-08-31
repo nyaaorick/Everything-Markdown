@@ -15,3 +15,6 @@ Thumbs.db
 
 # Local tooling config
 .claude/settings.local.json
+
+# web-ext sign
+Firefox/.amo-upload-uuid
