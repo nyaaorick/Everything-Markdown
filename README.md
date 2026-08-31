@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/banner.svg" alt="Everything Markdown" width="820">
+
 # Everything Markdown
 
 **A local-first, universal Markdown workspace for Firefox — with one-click Google Gemini conversation export.**
@@ -16,6 +18,8 @@
 Everything Markdown turns your browser into a self-contained Markdown editor and library. It captures a
 Google Gemini chat into clean Markdown in one click, then gives you a real editor to organise,
 annotate, and re-export it. Everything lives in your browser — no account, no server, no tracking.
+
+![Everything Markdown — CodeMirror 6 editor with live split-pane preview](docs/screenshot.png)
 
 ## Features
 
