@@ -29,7 +29,7 @@ browserAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       // Revoke temporary Blob URL after 60 seconds to release browser memory
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-      
+
       sendResponse({ ok: true });
     } catch (e) {
       console.error("Background download error:", e);

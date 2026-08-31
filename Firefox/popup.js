@@ -121,7 +121,7 @@ async function startManagerProcess() {
     const mdText = await extractMarkdown();
 
     statusText.textContent = "Opening notes manager and importing conversation...";
-    
+
     // IndexedDB approach via Dexie
     const db = new Dexie('EverythingMD_DB');
     db.version(1).stores({
@@ -142,7 +142,7 @@ async function startManagerProcess() {
       const now = new Date();
       title = `Gemini Conversation ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     }
-    
+
     const nowTime = Date.now();
     const meta = {
       id,
@@ -152,12 +152,12 @@ async function startManagerProcess() {
       createdAt: nowTime,
       updatedAt: nowTime
     };
-    
+
     await db.transaction('rw', db.docs, db.contents, async () => {
       await db.docs.put(meta);
       await db.contents.put({ id, content: mdText });
     });
-    
+
     localStorage.setItem('mdm_active_doc_id', id);
     localStorage.setItem('mdm_view_mode', 'dual');
 

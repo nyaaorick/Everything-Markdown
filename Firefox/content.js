@@ -5,16 +5,16 @@
   /** Determine if an element is truly visible on the page, filtering inactive draft and history edit containers */
   function isElementVisible(el) {
     if (!el) return false;
-    
+
     // Basic size check
     if (el.offsetWidth === 0 && el.offsetHeight === 0) {
       if (el.getClientRects().length === 0) return false;
     }
-    
+
     // Computed style check
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden') return false;
-    
+
     // Recursively check visibility of all parent nodes
     let parent = el.parentElement;
     while (parent) {
@@ -41,32 +41,32 @@
   function parseTable(tableNode, indent) {
     const rows = tableNode.querySelectorAll('tr');
     if (rows.length === 0) return "";
-    
+
     let mdTable = "\n";
     let hasHeader = false;
     let colCount = 0;
-    
+
     rows.forEach((row, rowIndex) => {
       // Only select direct child cells to avoid confusion in nested table parsing
       const cells = Array.from(row.children).filter(
         child => child.tagName === 'TH' || child.tagName === 'TD'
       );
       if (cells.length === 0) return;
-      
+
       if (rowIndex === 0) {
         colCount = cells.length;
         hasHeader = cells.every(cell => cell.tagName === 'TH') || row.parentElement?.tagName === 'THEAD';
       }
-      
+
       let rowContent = "| ";
       cells.forEach(cell => {
         // Parse the HTML inside the cell, converting internal newlines to <br> to prevent breaking Markdown table structure
         const cellText = recursiveParse(cell, indent).trim().replace(/\r?\n/g, "<br>");
         rowContent += cellText + " | ";
       });
-      
+
       mdTable += rowContent + "\n";
-      
+
       // If the first row is a header, add the Markdown divider
       if (rowIndex === 0 && colCount > 0) {
         let divider = "|";
@@ -76,7 +76,7 @@
         mdTable += divider + "\n";
       }
     });
-    
+
     return mdTable + "\n";
   }
 
@@ -85,32 +85,32 @@
     if (node.nodeType === Node.TEXT_NODE) {
       return node.nodeValue;
     }
-    
+
     if (node.nodeType !== Node.ELEMENT_NODE) {
       return "";
     }
-    
+
     // Filter assistive technology elements or explicitly hidden decorative elements
     if (node.getAttribute('aria-hidden') === 'true' || node.classList?.contains('sr-only')) {
       return "";
     }
-    
+
     // Filter superfluous interactive components in conversations (e.g., copy code buttons, feedback bars, etc.)
-    if (node.classList?.contains('code-block-header') || 
+    if (node.classList?.contains('code-block-header') ||
         node.classList?.contains('code-block-decorator') ||
-        node.tagName === 'BUTTON' || 
+        node.tagName === 'BUTTON' ||
         node.tagName === 'SVG' ||
         node.getAttribute('role') === 'button') {
       return "";
     }
-    
+
     // Perfectly handle KaTeX math formulas, extracting clean LaTeX source code
     if (node.classList?.contains('katex')) {
       const annot = node.querySelector('annotation[encoding="application/x-tex"]');
       if (annot) {
         const latex = annot.textContent.trim();
         // Distinguish between inline and block formulas
-        const isBlock = node.classList.contains('katex-display') || 
+        const isBlock = node.classList.contains('katex-display') ||
                         node.parentElement?.classList.contains('katex-display');
         if (isBlock) {
           return `\n\n$$\n${latex}\n$$\n\n`;
@@ -119,9 +119,9 @@
         }
       }
     }
-    
+
     const tag = node.tagName.toLowerCase();
-    
+
     switch (tag) {
       case 'h1': return `\n\n# ${recursiveChildren(node, indent, listContext)}\n\n`;
       case 'h2': return `\n\n## ${recursiveChildren(node, indent, listContext)}\n\n`;
@@ -129,32 +129,32 @@
       case 'h4': return `\n\n#### ${recursiveChildren(node, indent, listContext)}\n\n`;
       case 'h5': return `\n\n##### ${recursiveChildren(node, indent, listContext)}\n\n`;
       case 'h6': return `\n\n###### ${recursiveChildren(node, indent, listContext)}\n\n`;
-      
+
       case 'p': {
         const content = recursiveChildren(node, indent, listContext).trim();
         return content ? `\n\n${content}\n\n` : "";
       }
-      
+
       case 'strong':
       case 'b': {
         const content = recursiveChildren(node, indent, listContext);
         return content.trim() ? `**${content}**` : "";
       }
-      
+
       case 'em':
       case 'i': {
         const content = recursiveChildren(node, indent, listContext);
         return content.trim() ? `*${content}*` : "";
       }
-      
+
       case 'br': return "\n";
-      
+
       case 'a': {
         const content = recursiveChildren(node, indent, listContext);
         const href = node.getAttribute('href');
         return content.trim() && href ? `[${content}](${href})` : content;
       }
-      
+
       case 'code': {
         const isBlock = node.closest('pre') !== null;
         if (isBlock) {
@@ -163,11 +163,11 @@
           return ` \`${node.textContent.trim()}\` `;
         }
       }
-      
+
       case 'pre': {
         const codeNode = node.querySelector('code');
         const codeText = codeNode ? codeNode.textContent : node.textContent;
-        
+
         // Auto-parse programming language type of code block
         let lang = "";
         const classAttr = codeNode?.getAttribute('class') || node.getAttribute('class') || "";
@@ -175,14 +175,14 @@
         if (match) {
           lang = match[1];
         }
-        
+
         return `\n\n\`\`\`${lang}\n${codeText.trim()}\n\`\`\`\n\n`;
       }
-      
+
       case 'table': {
         return parseTable(node, indent);
       }
-      
+
       case 'ul': {
         let result = "\n";
         let liIndex = 1;
@@ -193,7 +193,7 @@
         });
         return result + "\n";
       }
-      
+
       case 'ol': {
         let result = "\n";
         let liIndex = 1;
@@ -204,14 +204,14 @@
         });
         return result + "\n";
       }
-      
+
       case 'li': {
         const prefix = listContext?.type === 'ol' ? `${listContext.index}. ` : "* ";
-        
+
         // Separate body child nodes and nested sub-lists
         let textParts = [];
         let subListParts = [];
-        
+
         Array.from(node.childNodes).forEach(child => {
           const childTag = child.nodeType === Node.ELEMENT_NODE ? child.tagName.toLowerCase() : "";
           if (childTag === 'ul' || childTag === 'ol') {
@@ -220,23 +220,23 @@
             textParts.push(child);
           }
         });
-        
+
         let textContent = "";
         textParts.forEach(part => {
           textContent += recursiveParse(part, indent, listContext);
         });
         textContent = textContent.trim();
-        
+
         let result = `${indent}${prefix}${textContent}\n`;
-        
+
         // Recursively handle sub-lists and increase indentation width to comply with Markdown specs
         subListParts.forEach(subList => {
           result += recursiveParse(subList, indent + "  ", listContext);
         });
-        
+
         return result;
       }
-      
+
       default: {
         return recursiveChildren(node, indent, listContext);
       }

@@ -1758,7 +1758,7 @@ const Manager = (() => {
         bestMarker = marker;
       }
     }
-    
+
     if (bestMarker) {
       const parent = bestMarker.parentElement;
       if (parent) {
@@ -2152,12 +2152,12 @@ const Manager = (() => {
           return item.type === 'block' ? `<div class="katex-display">${span}${rendered}</div>` : `${span}${rendered}`;
         }
       );
-      
+
       finalHtml = finalHtml.replace(
         new RegExp(`<p>\\s*${placeholderRegexStr}\\s*<\\/p>`, 'g'),
         item.type === 'block' ? `<div class="katex-display">${rendered}</div>` : rendered
       );
-      
+
       finalHtml = finalHtml.replace(
         new RegExp(placeholderRegexStr, 'g'),
         rendered
@@ -2366,8 +2366,8 @@ const Manager = (() => {
       // Remove original syntax
       content = content.replace(syntax, '');
 
-      // We need to insert the syntax into the DOM temporarily to find its new position, 
-      // but since we rebuild from markdown, it's easier to append to the end 
+      // We need to insert the syntax into the DOM temporarily to find its new position,
+      // but since we rebuild from markdown, it's easier to append to the end
       // or implement a rough text insertion based on block order.
       // For simplicity and exact placement, we use the drop indicator's sibling
       const nextSibling = _dropIndicator.nextElementSibling;
