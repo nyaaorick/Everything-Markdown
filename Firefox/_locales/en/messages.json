@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Everything Markdown",
+    "description": "Name of the extension."
+  },
+  "extDescription": {
+    "message": "Save any Google Gemini chat as clean Markdown in one click, then organise, edit and export it in a fast, local-first Markdown workspace. No account, no servers, no tracking.",
+    "description": "Browser action tooltip and store summary."
+  }
+}

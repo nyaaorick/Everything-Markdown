@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Everything Markdown",
+  "name": "__MSG_extName__",
   "version": "1.5",
-  "description": "A full-featured universal Markdown manager and Gemini exporter.",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
   "permissions": ["activeTab", "downloads", "scripting", "storage", "unlimitedStorage"],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

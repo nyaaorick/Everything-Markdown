@@ -21,6 +21,15 @@ annotate, and re-export it. Everything lives in your browser — no account, no 
 
 ![Everything Markdown — CodeMirror 6 editor with live split-pane preview](docs/screenshot.png)
 
+## Why Everything Markdown?
+
+- **Your Gemini answers don't have to stay trapped in a chat tab.** One click turns the visible
+  conversation into portable Markdown — headings, tables and code fences intact.
+- **It's a real editor, not a viewer.** CodeMirror 6, a live split-pane preview, LaTeX math,
+  images, folders and full-text search — enough to actually live in.
+- **Nothing leaves your browser.** No account, no sign-in, no server round-trips, no analytics.
+  The add-on declares zero data collection and works fully offline.
+
 ## Features
 
 ### 📥 Gemini → Markdown
@@ -50,6 +59,8 @@ annotate, and re-export it. Everything lives in your browser — no account, no 
 - `data_collection_permissions: none` — declared zero data collection.
 
 ## Install
+
+**From Firefox Add-ons:** _listing pending review_ — for now, install from source or a built package.
 
 ### From source (development)
 
@@ -92,21 +103,40 @@ pick `Firefox/manifest.json`.
 
 ```
 Firefox/
-  manifest.json      Manifest V3 definition
-  popup.html/js      Toolbar popup — Gemini capture UI
-  content.js         Injected Gemini DOM -> Markdown extractor
-  background.js      Downloads / messaging
-  manager.html       Full editor + library UI
-  app.js             Manager logic (Storage, FolderTree, Editor, Search, Highlight, Manager modules)
-  lib/               Vendored dependencies (CodeMirror bundle, Dexie, marked, KaTeX, 7zz WASM)
-docs/DEVELOPMENT.md  Module interfaces and working principles
-test/                Integration tests
+  manifest.json         Manifest V3 definition
+  _locales/             Localised name + summary (en, zh_CN)
+  icons/icon.svg        Single-file vector app icon
+  popup.html/js         Toolbar popup — Gemini capture UI
+  content.js            Injected Gemini DOM -> Markdown extractor
+  background.js         Downloads / messaging
+  manager.html          Full editor + library UI
+  app.js                Manager logic (Storage, FolderTree, Editor, Search, Highlight, Manager modules)
+  lib/                  Vendored dependencies (CodeMirror bundle, Dexie, marked, KaTeX, 7zz WASM)
+docs/DEVELOPMENT.md     Module interfaces and working principles
+docs/STORE_LISTING.md   Copy-paste text for the addons.mozilla.org listing
+test/                   Integration tests
 ```
+
+## FAQ
+
+**Does it send my conversations anywhere?**
+No. Extraction runs entirely in the page, and notes are stored in your browser's IndexedDB. There
+are no network requests and no analytics.
+
+**Which sites does the one-click export support?**
+Google Gemini (`gemini.google.com`). The editor and library work with any Markdown, from any source.
+
+**Where are my notes saved? Can I get them out?**
+In-browser (IndexedDB). Export any note as `.md`, or as a `.7z` bundle when it contains images.
+
+**Does it work offline?**
+Yes — everything except the Gemini page itself is local.
 
 ## Contributing
 
 Issues and PRs are welcome. Keep changes small and focused; run `./build.sh` (web-ext lint) before
-opening a PR. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the module interfaces.
+opening a PR. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the module interfaces, and keep
+[docs/STORE_LISTING.md](docs/STORE_LISTING.md) in sync with `Firefox/_locales/`.
 
 ## License
 

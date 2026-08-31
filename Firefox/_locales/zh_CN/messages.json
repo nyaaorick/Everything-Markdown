@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Everything Markdown",
+    "description": "Name of the extension."
+  },
+  "extDescription": {
+    "message": "一键将 Google Gemini 对话保存为干净的 Markdown，并在快速、本地优先的 Markdown 工作区中整理、编辑与再导出。无需账号，无服务器，无跟踪。",
+    "description": "Browser action tooltip and store summary."
+  }
+}
