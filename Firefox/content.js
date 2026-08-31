@@ -251,6 +251,11 @@
     return result;
   }
 
+  /** Drop the separator trailing the final turn so the export does not end on a stray rule */
+  function trimTrailingRule(md) {
+    return md.replace(/\n---\n\n$/, "\n");
+  }
+
   /** If message-content-container exists, use it as a fallback when main merge strategy yields no result */
   function exportFromTurnContainers() {
     const roots = Array.from(document.querySelectorAll("message-content-container"))
@@ -273,7 +278,7 @@
       if (!text) return;
       md += `### ${index + 1} · ${label}\n\n${text}\n\n---\n\n`;
     });
-    return md;
+    return trimTrailingRule(md);
   }
 
   function pickRoleLabel(node) {
@@ -353,7 +358,7 @@
       serial += 1;
       md += `### ${serial} · ${label}\n\n${text}\n\n---\n\n`;
     });
-    return md;
+    return trimTrailingRule(md);
   }
 
   // First choice: merge currently visible "Question + Answer"

@@ -29,6 +29,11 @@ const Storage = (() => {
     folderArr.forEach(f => _folders[f.id] = f);
     _docs = {};
     docArr.forEach(d => _docs[d.id] = d);
+
+    // Drop legacy text-only highlights. They were located by searching for their text, which
+    // could not survive a selection crossing an inline element; they carry no block/offset
+    // anchor and cannot be converted.
+    await db.highlights.filter(h => h.start === undefined).delete();
   }
 
   function getFolders() { return { ..._folders }; }
@@ -50,19 +55,19 @@ const Storage = (() => {
   async function deleteFolder(id) {
     if (!_folders[id]) return;
     const parentId = _folders[id].parentId;
-    
+
     const subfs = await db.folders.where('parentId').equals(id).toArray();
     for (const f of subfs) {
       await db.folders.update(f.id, { parentId });
       if (_folders[f.id]) _folders[f.id].parentId = parentId;
     }
-    
+
     const subdocs = await db.docs.where('folderId').equals(id).toArray();
     for (const d of subdocs) {
       await db.docs.update(d.id, { folderId: parentId });
       if (_docs[d.id]) _docs[d.id].folderId = parentId;
     }
-    
+
     await db.folders.delete(id);
     delete _folders[id];
   }
@@ -78,12 +83,12 @@ const Storage = (() => {
     const id = generateId('d_');
     const now = Date.now();
     const meta = { id, title, folderId, isBookmarked: false, createdAt: now, updatedAt: now };
-    
+
     await db.transaction('rw', db.docs, db.contents, async () => {
       await db.docs.put(meta);
       await db.contents.put({ id, content });
     });
-    
+
     _docs[id] = meta;
     return meta;
   }
@@ -144,14 +149,14 @@ const Storage = (() => {
     if (!query || !query.trim()) return [];
     const q = query.toLowerCase().trim();
     const results = [];
-    
+
     await db.contents.each(record => {
       const doc = _docs[record.id];
       if (!doc) return;
       let score = 0;
       if (doc.title.toLowerCase().includes(q)) score += 10;
       if (record.content.toLowerCase().includes(q)) score += 5;
-      
+
       if (score > 0) {
         results.push({
           ...doc,
@@ -160,7 +165,7 @@ const Storage = (() => {
         });
       }
     });
-    
+
     return results.sort((a, b) => b.score - a.score);
   }
 
@@ -172,31 +177,48 @@ const Storage = (() => {
     return (start > 0 ? '...' : '') + content.substring(start, end) + (end < content.length ? '...' : '');
   }
 
-  function dataURLtoBlob(dataurl) {
-    const arr = dataurl.split(',');
-    const match = arr[0].match(/:(.*?);/);
-    const mime = match ? match[1] : '';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
+  // Save pure binary asset (Blob/File/Uint8Array) and return relative physical path
+  async function saveAsset(blobData, filenameOrExt = 'png') {
+    if (!blobData) {
+      throw new Error('saveAsset failed: blobData is required');
     }
-    return new Blob([u8arr], { type: mime });
+
+    let relativePath;
+    if (typeof filenameOrExt === 'string' && filenameOrExt.includes('.')) {
+      const cleanName = filenameOrExt.replace(/^[./\\]+/, '').replace(/^assets\//, '');
+      relativePath = `assets/${cleanName}`;
+    } else {
+      const ext = (typeof filenameOrExt === 'string' ? filenameOrExt : 'png').replace(/^\./, '') || 'png';
+      const cleanId = generateId('img_');
+      relativePath = `assets/${cleanId}.${ext}`;
+    }
+
+    let blob = blobData;
+    if (blobData instanceof Uint8Array || blobData instanceof ArrayBuffer) {
+      blob = new Blob([blobData]);
+    }
+
+    await db.assets.put({ id: relativePath, data: blob });
+    return relativePath;
   }
 
-  async function saveAsset(data, extension = 'png') {
-    const assetId = generateId('asset_') + '.' + extension;
-    let blob = data;
-    if (typeof data === 'string' && data.startsWith('data:')) {
-      blob = dataURLtoBlob(data);
-    }
-    await db.assets.put({ id: assetId, data: blob });
-    return `local://${assetId}`;
+  // Recognize a local asset reference (assets/..., ./assets/..., local://...)
+  function isLocalAssetRef(ref) {
+    return typeof ref === 'string' && /^(?:\.\/)?assets\/|^local:\/\//.test(ref);
   }
 
-  async function getAsset(assetId) {
-    const record = await db.assets.get(assetId);
+  // Strip local asset ref prefixes (local://, ./, assets/) down to the bare filename
+  function normalizeAssetPath(ref) {
+    return (ref || '').replace(/^local:\/\//, '').replace(/^\.\//, '').replace(/^assets\//, '');
+  }
+
+  async function getAsset(assetPathOrId) {
+    if (!assetPathOrId) return null;
+    const bareName = normalizeAssetPath(assetPathOrId);
+    let record = await db.assets.get(`assets/${bareName}`);
+    if (!record) {
+      record = await db.assets.get(bareName);
+    }
     return record ? record.data : null;
   }
 
@@ -208,7 +230,7 @@ const Storage = (() => {
     getDocMeta, getDocContent, createDoc, updateDocContent, updateDocMeta, deleteDoc, toggleBookmark,
     getHighlights, addHighlight, removeHighlight,
     searchDocs,
-    saveAsset, getAsset
+    saveAsset, getAsset, isLocalAssetRef, normalizeAssetPath
   };
 })();
 
@@ -283,7 +305,7 @@ const FolderTree = (() => {
         // Folder header
         const header = document.createElement('div');
         header.className = 'folder-header';
-        
+
         // Collapse arrow symbol
         const toggle = document.createElement('span');
         toggle.className = 'folder-toggle';
@@ -616,90 +638,311 @@ const FolderTree = (() => {
 
 
 // editor.js — Editor and shortcut formatting control module
-// Responsible for automatic line number generation, scroll synchronization, toolbar rich text formatting tools (bold, italic, code, link, LaTeX), and shortcut key support
+// Powered by CodeMirror 6: Markdown syntax highlighting, line numbers, line wrapping, history, keymaps, and toolbar integration
 
 const Editor = (() => {
-  let _textarea = null;
-  let _lineNumbers = null;
+  let _view = null;
+  let _container = null;
   let _onChangeCallback = null;
+  let _onSelectionChangeCallback = null;
+  let _isSettingContent = false;
+  let _wrapCompartment = null;
 
   // Initialize editor configuration
-  function init(onChange) {
-    _textarea = document.getElementById('editorTextarea');
-    _lineNumbers = document.getElementById('lineNumbers');
-    _onChangeCallback = onChange;
+  function init(options) {
+    _container = document.getElementById('editorContainer');
+    if (!_container) {
+      throw new Error('Fail-Fast: #editorContainer DOM element not found');
+    }
+    if (typeof CodeMirror6 === 'undefined') {
+      throw new Error('Fail-Fast: CodeMirror6 library bundle is not loaded');
+    }
 
-    if (!_textarea || !_lineNumbers) return;
+    options = (options && typeof options === 'object') ? options : {};
+    _onChangeCallback = options.onChange;
+    _onSelectionChangeCallback = options.onSelectionChange;
 
-    // Listen to input events: update line numbers in real-time, and trigger main controller's modify callback (e.g., render preview, auto-save)
-    _textarea.addEventListener('input', () => {
-      updateLineNumbers();
-      if (_onChangeCallback) _onChangeCallback(getContent());
+    const {
+      EditorView,
+      EditorState,
+      Compartment,
+      basicSetup,
+      markdown,
+      autocompletion,
+      snippet,
+      indentWithTab,
+      keymap,
+      placeholder
+    } = CodeMirror6;
+
+    _wrapCompartment = new Compartment();
+
+    // 1. Custom keybindings for Markdown shortcuts (Ctrl/Cmd+B, Ctrl/Cmd+I, Ctrl/Cmd+K)
+    const customMarkdownKeymap = [
+      {
+        key: 'Mod-b',
+        run: () => {
+          insertFormat('**', '**', 'Bold Text');
+          return true;
+        }
+      },
+      {
+        key: 'Mod-i',
+        run: () => {
+          insertFormat('*', '*', 'Italic Text');
+          return true;
+        }
+      },
+      {
+        key: 'Mod-k',
+        run: () => {
+          const sel = getSelectedText();
+          insertFormat('[', '](url)', sel || 'Link Name');
+          return true;
+        }
+      }
+    ];
+
+    // 2. Markdown Slash Commands & Snippet Completion (/table, /math, /code, /quote, /task)
+    const markdownSnippets = [
+      {
+        label: '/table',
+        detail: 'Markdown Table',
+        type: 'keyword',
+        apply: snippet ? snippet('| Header 1 | Header 2 |\n|---|---|\n| ${1:Cell 1} | ${2:Cell 2} |') : '| Header 1 | Header 2 |\n|---|---|\n| Cell 1 | Cell 2 |'
+      },
+      {
+        label: '/math',
+        detail: 'LaTeX Block Formula',
+        type: 'keyword',
+        apply: snippet ? snippet('$$\n${1:f(x) = x^2}\n$$') : '$$\nf(x) = x^2\n$$'
+      },
+      {
+        label: '/code',
+        detail: 'Code Block',
+        type: 'keyword',
+        apply: snippet ? snippet('```${1:javascript}\n${2:// code}\n```') : '```javascript\n// code\n```'
+      },
+      {
+        label: '/quote',
+        detail: 'Blockquote',
+        type: 'keyword',
+        apply: snippet ? snippet('> ${1:Quote text}') : '> Quote text'
+      },
+      {
+        label: '/task',
+        detail: 'Task Checklist Item',
+        type: 'keyword',
+        apply: snippet ? snippet('- [ ] ${1:Task item}') : '- [ ] Task item'
+      }
+    ];
+
+    const slashCommandsExtension = autocompletion ? autocompletion({
+      override: [
+        (context) => {
+          const match = context.matchBefore(/\/\w*/);
+          if (!match) return null;
+          if (match.from === match.to && !context.explicit) return null;
+          return {
+            from: match.from,
+            options: markdownSnippets
+          };
+        }
+      ]
+    }) : [];
+
+    // 3. Document change listener
+    const changeListener = EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        if (!_isSettingContent && _onChangeCallback) {
+          _onChangeCallback(getContent());
+        }
+      }
+      if (update.selectionSet && _onSelectionChangeCallback) {
+        // Debounce or directly call
+        _onSelectionChangeCallback(update.state);
+      }
     });
 
-    // Listen to scroll events: synchronize the scroll position of line numbers and text input box completely in the vertical direction
-    _textarea.addEventListener('scroll', syncScroll);
+    // 4. Native DOM event handlers for drag/drop and paste
+    const domHandlers = EditorView.domEventHandlers({
+      dragover(e) {
+        if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+          e.preventDefault();
+        }
+      },
+      drop(e, view) {
+        if (options && options.onDrop) {
+          return options.onDrop(e, view);
+        }
+        return false;
+      },
+      paste(e, view) {
+        if (options && options.onPaste) {
+          return options.onPaste(e, view);
+        }
+        return false;
+      }
+    });
 
-    // Listen to keyboard press: support Tab indentation and common Ctrl/Cmd shortcuts
-    _textarea.addEventListener('keydown', handleKeydown);
+    const startState = EditorState.create({
+      doc: '',
+      extensions: [
+        // basicSetup already provides bracketMatching, closeBrackets, foldGutter,
+        // highlightSelectionMatches, autocompletion, history, and the default/search/history/
+        // fold/closeBrackets keymaps — only genuinely additional extensions belong below.
+        basicSetup,
+        markdown(),
+        _wrapCompartment.of(EditorView.lineWrapping),
+        slashCommandsExtension,
+        placeholder('Start writing Markdown... (type / for snippets)'),
+        keymap.of([
+          ...customMarkdownKeymap,
+          indentWithTab
+        ]),
+        domHandlers,
+        changeListener
+      ]
+    });
+
+    _view = new EditorView({
+      state: startState,
+      parent: _container
+    });
 
     // Bind toolbar formatting button events
     bindToolbarButtons();
-
-
-    // Generate line numbers initially once
-    updateLineNumbers();
   }
 
-  // Synchronize scroll position
-  function syncScroll() {
-    if (_lineNumbers && _textarea) {
-      _lineNumbers.scrollTop = _textarea.scrollTop;
-    }
+  // Get selected text
+  function getSelectedText() {
+    if (!_view) return '';
+    const state = _view.state;
+    const { from, to } = state.selection.main;
+    return state.sliceDoc(from, to);
   }
 
-  // Dynamically update line numbers
-  function updateLineNumbers() {
-    if (!_textarea || !_lineNumbers) return;
-    const text = _textarea.value;
-    const lines = text.split('\n');
-    const lineCount = Math.max(1, lines.length);
-
-    let lineNumbersHTML = '';
-    for (let i = 1; i <= lineCount; i++) {
-      lineNumbersHTML += i + '\n';
-    }
-    _lineNumbers.textContent = lineNumbersHTML;
-    
-    // Recalibrate scrollbar immediately after each line number update
-    syncScroll();
-  }
-
-  // Insert specifically formatted Markdown marks at cursor position or wrap selected text
+  // Insert formatted Markdown marks at cursor or around selection
   function insertFormat(prefix, suffix, defaultText = '') {
-    if (!_textarea) return;
+    if (typeof prefix !== 'string' || typeof suffix !== 'string') {
+      throw new TypeError('Fail-Fast: prefix and suffix must be strings');
+    }
+    if (!_view) return;
 
-    const start = _textarea.selectionStart;
-    const end = _textarea.selectionEnd;
-    const value = _textarea.value;
-
-    const selectionText = value.substring(start, end);
+    const state = _view.state;
+    const { from, to } = state.selection.main;
+    const selectionText = state.sliceDoc(from, to);
     const contentToInsert = selectionText || defaultText;
     const insertion = prefix + contentToInsert + suffix;
 
-    _textarea.value = value.substring(0, start) + insertion + value.substring(end);
+    _view.dispatch({
+      changes: { from, to, insert: insertion },
+      selection: {
+        anchor: from + prefix.length,
+        head: selectionText ? from + prefix.length + selectionText.length : from + prefix.length + defaultText.length
+      }
+    });
 
-    // Re-adjust cursor position so that the text selected by the user remains selected after formatting, or cursor is between syntax symbols
-    _textarea.focus();
-    if (selectionText) {
-      _textarea.setSelectionRange(start + prefix.length, start + prefix.length + selectionText.length);
-    } else {
-      _textarea.setSelectionRange(start + prefix.length, start + prefix.length + defaultText.length);
-    }
-
-    // Trigger update
-    updateLineNumbers();
+    _view.focus();
     if (_onChangeCallback) _onChangeCallback(getContent());
+  }
+
+  // Insert text at specific position or current cursor
+  function insertText(text, pos = null) {
+    if (typeof text !== 'string') {
+      throw new TypeError('Fail-Fast: text must be a string');
+    }
+    if (!_view) return;
+    const insertPos = (typeof pos === 'number' && pos >= 0) ? pos : _view.state.selection.main.from;
+    _view.dispatch({
+      changes: { from: insertPos, insert: text },
+      selection: { anchor: insertPos + text.length }
+    });
+    _view.focus();
+    if (_onChangeCallback) _onChangeCallback(getContent());
+  }
+
+  // AST-based Headings / TOC inspection utility
+  function getHeadings() {
+    if (!_view) return [];
+    const { syntaxTree } = CodeMirror6;
+    if (!syntaxTree) return [];
+
+    const headings = [];
+    const state = _view.state;
+    const tree = syntaxTree(state);
+
+    tree.iterate({
+      enter: (node) => {
+        if (node.name.startsWith('ATXHeading')) {
+          const level = parseInt(node.name.replace('ATXHeading', ''), 10) || 1;
+          const raw = state.sliceDoc(node.from, node.to);
+          const text = raw.replace(/^#+\s*/, '').trim();
+          headings.push({ level, text, from: node.from, to: node.to });
+        }
+      }
+    });
+    return headings;
+  }
+
+  // Markdown syntax nodes that carry no rendered text: the delimiters themselves (**, *, `, #,
+  // >, -), plus link targets which become attributes rather than visible text.
+  const MARKUP_NODE_RE = /Mark$|^URL$|^LinkTitle$|^CodeInfo$/;
+
+  // Build the source <-> rendered character map for a source range, using CodeMirror's own
+  // Markdown syntax tree to decide which characters survive into the rendered output.
+  // Returns { rendered, srcToRen, renToSrc } where the maps hold character offsets relative
+  // to `from` (source) and to the start of `rendered`.
+  function mapBlock(from, to) {
+    if (!_view) return null;
+    const { syntaxTree } = CodeMirror6;
+    if (!syntaxTree) return null;
+
+    const state = _view.state;
+    const doc = state.doc.toString();
+    to = Math.min(to, doc.length);
+    if (from >= to) return null;
+
+    // Collect markup spans, then merge them so nested marks can't double-count
+    const skips = [];
+    syntaxTree(state).iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (MARKUP_NODE_RE.test(node.name)) skips.push([node.from, node.to]);
+      }
+    });
+    skips.sort((a, b) => a[0] - b[0]);
+
+    let rendered = '';
+    const srcToRen = new Map();
+    const renToSrc = new Map();
+    let pos = from;
+
+    const emit = (until) => {
+      for (let i = pos; i < until; i++) {
+        srcToRen.set(i, rendered.length);
+        renToSrc.set(rendered.length, i);
+        rendered += doc[i];
+      }
+    };
+
+    for (const [s, e] of skips) {
+      if (s > pos) emit(s);
+      pos = Math.max(pos, e);
+    }
+    emit(to);
+
+    return { rendered, srcToRen, renToSrc };
+  }
+
+  // Dynamic Word Wrap Configuration
+  function setWordWrap(enabled) {
+    if (!_view || !_wrapCompartment) return;
+    const { EditorView } = CodeMirror6;
+    _view.dispatch({
+      effects: _wrapCompartment.reconfigure(enabled ? EditorView.lineWrapping : [])
+    });
   }
 
   // Bind events to toolbar buttons
@@ -710,19 +953,12 @@ const Editor = (() => {
     const linkBtn = document.getElementById('linkBtn');
     const latexBtn = document.getElementById('latexBtn');
 
-    if (boldBtn) {
-      boldBtn.addEventListener('click', () => insertFormat('**', '**', 'Bold Text'));
-    }
-    if (italicBtn) {
-      italicBtn.addEventListener('click', () => insertFormat('*', '*', 'Italic Text'));
-    }
+    if (boldBtn) boldBtn.addEventListener('click', () => insertFormat('**', '**', 'Bold Text'));
+    if (italicBtn) italicBtn.addEventListener('click', () => insertFormat('*', '*', 'Italic Text'));
     if (codeBtn) {
       codeBtn.addEventListener('click', () => {
-        // Use block code block if selected text contains newlines; otherwise use inline code
-        const start = _textarea.selectionStart;
-        const end = _textarea.selectionEnd;
-        const selection = _textarea.value.substring(start, end);
-        if (selection.includes('\n')) {
+        const sel = getSelectedText();
+        if (sel.includes('\n')) {
           insertFormat('```javascript\n', '\n```', 'console.log("Hello World");');
         } else {
           insertFormat('`', '`', 'code');
@@ -731,25 +967,18 @@ const Editor = (() => {
     }
     if (linkBtn) {
       linkBtn.addEventListener('click', () => {
-        const start = _textarea.selectionStart;
-        const end = _textarea.selectionEnd;
-        const selection = _textarea.value.substring(start, end);
-        if (selection.startsWith('http://') || selection.startsWith('https://')) {
-          // Selected content is a link
-          insertFormat('[Link Text](', ')', selection);
+        const sel = getSelectedText();
+        if (sel.startsWith('http://') || sel.startsWith('https://')) {
+          insertFormat('[Link Text](', ')', sel);
         } else {
-          // Selected content is plain text
-          insertFormat('[', '](https://example.com)', selection || 'Link Name');
+          insertFormat('[', '](https://example.com)', sel || 'Link Name');
         }
       });
     }
     if (latexBtn) {
       latexBtn.addEventListener('click', () => {
-        const start = _textarea.selectionStart;
-        const end = _textarea.selectionEnd;
-        const selection = _textarea.value.substring(start, end);
-        // If multiple lines, insert block-level formula, otherwise inline formula
-        if (selection.includes('\n')) {
+        const sel = getSelectedText();
+        if (sel.includes('\n')) {
           insertFormat('$$\n', '\n$$', 'E = mc^2');
         } else {
           insertFormat('$', '$', 'f(x) = x^2');
@@ -758,71 +987,67 @@ const Editor = (() => {
     }
   }
 
-  // Keyboard shortcut listener
-  function handleKeydown(e) {
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    const ctrlKey = isMac ? e.metaKey : e.ctrlKey;
-
-    // 1. Support Tab key to input 2 spaces indentation
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const start = _textarea.selectionStart;
-      const end = _textarea.selectionEnd;
-      const value = _textarea.value;
-
-      _textarea.value = value.substring(0, start) + '  ' + value.substring(end);
-      _textarea.setSelectionRange(start + 2, start + 2);
-
-      updateLineNumbers();
-      if (_onChangeCallback) _onChangeCallback(getContent());
-      return;
-    }
-
-    // 2. Ctrl + B -> Bold
-    if (ctrlKey && e.key.toLowerCase() === 'b') {
-      e.preventDefault();
-      insertFormat('**', '**', 'Bold Text');
-      return;
-    }
-
-    // 3. Ctrl + I -> Italic
-    if (ctrlKey && e.key.toLowerCase() === 'i') {
-      e.preventDefault();
-      insertFormat('*', '*', 'Italic Text');
-      return;
-    }
-
-    // 4. Ctrl + K -> Link
-    if (ctrlKey && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      const start = _textarea.selectionStart;
-      const end = _textarea.selectionEnd;
-      const selection = _textarea.value.substring(start, end);
-      insertFormat('[', '](url)', selection || 'Link Name');
-      return;
-    }
-  }
-
   // Set editor content
   function setContent(content) {
-    if (_textarea) {
-      _textarea.value = content || '';
-      updateLineNumbers();
+    if (typeof content !== 'string') {
+      content = (content === null || content === undefined) ? '' : String(content);
+    }
+    if (!_view) return;
+    const currentContent = getContent();
+    if (currentContent === content) return;
+
+    _isSettingContent = true;
+    try {
+      _view.dispatch({
+        changes: { from: 0, to: _view.state.doc.length, insert: content }
+      });
+    } finally {
+      _isSettingContent = false;
     }
   }
 
   // Get editor content
   function getContent() {
-    return _textarea ? _textarea.value : '';
+    return _view ? _view.state.doc.toString() : '';
   }
 
-  // Expose API
+  // Focus editor
+  function focus() {
+    if (_view) _view.focus();
+  }
+
+  // Get EditorView instance
+  function getView() {
+    return _view;
+  }
+
+  // Compatibility helpers
+  function updateLineNumbers() {
+    if (_view) _view.requestMeasure();
+  }
+
+  // Set selection given anchor and head
+  function setSelection(anchor, head) {
+    if (!_view) return;
+    _view.dispatch({
+      selection: { anchor, head },
+      effects: CodeMirror6.EditorView.scrollIntoView(anchor, { y: 'center' })
+    });
+  }
+
   return {
     init,
     setContent,
     getContent,
+    insertFormat,
+    insertText,
+    getHeadings,
+    setWordWrap,
+    focus,
+    getView,
     updateLineNumbers,
-    syncScroll
+    setSelection,
+    mapBlock
   };
 })();
 
@@ -947,7 +1172,7 @@ const Search = (() => {
     if (!text) return '';
     const escapedText = escapeHTML(text);
     const escapedKeyword = escapeHTML(keyword);
-    
+
     // RegExp escaping, safely perform case-insensitive full-text replacement
     const regexPattern = escapedKeyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     const regex = new RegExp(`(${regexPattern})`, 'gi');
@@ -971,6 +1196,146 @@ const Search = (() => {
 })();
 
 
+// sync-guard.js — Single suppression gate for editor/preview cross-syncing
+// Any programmatic scroll or selection is wrapped in SyncGuard.run(origin, fn); handlers on the
+// opposite side consult SyncGuard.isBusy() to avoid echoing a sync back at its own source.
+const SyncGuard = (() => {
+  let _origin = null;
+  let _timer = null;
+
+  // Mark `origin` as driving a sync for the duration of fn plus a short settle window.
+  // DOM selectionchange/scroll events are delivered asynchronously, so the window has to
+  // outlive the call itself.
+  function run(origin, fn, settleMs = 120) {
+    _origin = origin;
+    clearTimeout(_timer);
+    try {
+      return fn();
+    } finally {
+      _timer = setTimeout(() => { _origin = null; }, settleMs);
+    }
+  }
+
+  // True when a sync is in flight from an origin other than the caller's
+  function isBusy(exceptOrigin = null) {
+    return _origin !== null && _origin !== exceptOrigin;
+  }
+
+  function clear() {
+    clearTimeout(_timer);
+    _origin = null;
+  }
+
+  return { run, isBusy, clear };
+})();
+
+
+// block-map.js — Addresses preview text by block anchor + character offset
+// The `.sync-marker` spans injected during render carry data-line; every position used by the
+// highlight and selection-sync features is expressed relative to the block that owns one,
+// rather than by searching for text strings (which breaks across inline elements).
+const BlockMap = (() => {
+  // Resolve the block element owning `node`, i.e. the ancestor that directly contains a
+  // .sync-marker. Returns { blockEl, line } or null.
+  function getBlock(node) {
+    const mdBody = document.getElementById('mdBody');
+    if (!node || !mdBody || !mdBody.contains(node)) return null;
+
+    let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    while (el && el !== mdBody) {
+      const marker = el.querySelector(':scope > .sync-marker');
+      if (marker) {
+        const line = parseInt(marker.dataset.line, 10);
+        if (!isNaN(line)) return { blockEl: el, line };
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  // Find the block element carrying a given data-line value
+  function getBlockByLine(line) {
+    const mdBody = document.getElementById('mdBody');
+    if (!mdBody) return null;
+    const marker = mdBody.querySelector(`.sync-marker[data-line="${line}"]`);
+    return marker ? marker.parentElement : null;
+  }
+
+  // Ordered list of text nodes inside a block, paired with their running offset within
+  // blockEl.textContent. The marker span holds no text, so it contributes nothing.
+  function textNodesOf(blockEl) {
+    const walker = document.createTreeWalker(blockEl, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    let offset = 0;
+    let node;
+    while (node = walker.nextNode()) {
+      const len = node.nodeValue.length;
+      nodes.push({ node, start: offset, end: offset + len });
+      offset += len;
+    }
+    return nodes;
+  }
+
+  // Character offset of (node, offset) within blockEl.textContent.
+  // Measured with a Range so it works whether the boundary sits in a text node or on an
+  // element (selectNodeContents, double-click and cross-element selections all produce the
+  // latter). The zero-width .sync-marker span contributes no text, so offsets stay aligned
+  // with textContent.
+  function offsetInBlock(blockEl, node, offset) {
+    if (!blockEl || !node || !blockEl.contains(node)) return -1;
+    try {
+      const range = document.createRange();
+      range.setStart(blockEl, 0);
+      range.setEnd(node, offset);
+      return range.toString().length;
+    } catch (e) {
+      return -1;
+    }
+  }
+
+  // Build a DOM Range spanning [start, end) of blockEl.textContent
+  function rangeFromOffsets(blockEl, start, end) {
+    const entries = textNodesOf(blockEl);
+    let startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+
+    for (const entry of entries) {
+      if (!startNode && entry.end > start) {
+        startNode = entry.node;
+        startOffset = start - entry.start;
+      }
+      if (startNode && entry.end >= end) {
+        endNode = entry.node;
+        endOffset = end - entry.start;
+        break;
+      }
+    }
+
+    if (!startNode || !endNode) return null;
+    const range = document.createRange();
+    range.setStart(startNode, Math.max(0, startOffset));
+    range.setEnd(endNode, Math.max(0, endOffset));
+    return range;
+  }
+
+  // Text-node slices covered by [start, end). Each slice can be wrapped independently, which
+  // is what lets a highlight survive crossing <strong>/<em>/<a> boundaries — a single
+  // range.surroundContents() would throw on those partially-selected elements.
+  function segmentsInRange(blockEl, start, end) {
+    const segments = [];
+    for (const entry of textNodesOf(blockEl)) {
+      const from = Math.max(start, entry.start);
+      const to = Math.min(end, entry.end);
+      if (from < to) {
+        segments.push({ node: entry.node, from: from - entry.start, to: to - entry.start });
+      }
+    }
+    return segments;
+  }
+
+  return { getBlock, getBlockByLine, textNodesOf, offsetInBlock, rangeFromOffsets, segmentsInRange };
+})();
+
+
 // highlight.js — Selected text highlighting component
 // Responsible for capturing selection range in the preview panel, positioning popup bubbles, saving highlight data, safely replacing rendering highlight effects via DOM, and clicking to undo
 
@@ -978,6 +1343,8 @@ const Highlight = (() => {
   let _bubble = null;
   let _activeDocId = null;
   let _onHighlightChangedCallback = null;
+  // Highlights for the active doc, cached so re-rendering on every keystroke costs no I/O
+  let _cache = [];
 
   // Initialize highlight module, bind selection events and color buttons
   function init(onHighlightChanged) {
@@ -986,9 +1353,17 @@ const Highlight = (() => {
 
     if (!_bubble) return;
 
-    // Listen to mouse up and selection change events to intelligently position and show or hide highlight floating bubble
     document.addEventListener('selectionchange', handleSelectionChange);
-    document.addEventListener('mouseup', handleMouseUp);
+
+    // Dismiss on a click that starts outside the bubble, and whenever the preview scrolls —
+    // the bubble is pinned to viewport coordinates and would otherwise detach from its text.
+    document.addEventListener('mousedown', (e) => {
+      if (!_bubble.contains(e.target)) hideBubble();
+    });
+    const previewPane = document.getElementById('previewPane');
+    if (previewPane) {
+      previewPane.addEventListener('scroll', hideBubble);
+    }
 
     // Bind highlight color selection buttons
     const buttons = _bubble.querySelectorAll('.hl-btn');
@@ -1008,14 +1383,21 @@ const Highlight = (() => {
   }
 
   // Bind currently selected document ID
-  function setActiveDoc(docId) {
+  async function setActiveDoc(docId) {
     _activeDocId = docId;
     hideBubble();
+    _cache = docId ? await Storage.getHighlights(docId) : [];
   }
 
   // Get and display selection position
   function handleSelectionChange() {
     if (!_activeDocId) return;
+
+    // A selection mirrored in from the editor is not a user gesture — don't offer to highlight it
+    if (SyncGuard.isBusy('preview')) {
+      hideBubble();
+      return;
+    }
 
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
@@ -1036,25 +1418,19 @@ const Highlight = (() => {
       return;
     }
 
-    // Get selection viewport position and precisely position bubble
+    // getBoundingClientRect is already viewport-relative and the bubble is position:fixed,
+    // so no scroll offsets are involved — this is what keeps it attached while #previewPane scrolls.
     const rect = range.getBoundingClientRect();
-    const scrollX = window.scrollX || window.pageXOffset;
-    const scrollY = window.scrollY || window.pageYOffset;
-
-    // Display bubble directly above selection
-    _bubble.style.left = `${rect.left + scrollX + (rect.width / 2) - (_bubble.offsetWidth / 2)}px`;
-    _bubble.style.top = `${rect.top + scrollY - _bubble.offsetHeight - 8}px`;
     _bubble.classList.remove('hidden');
-  }
 
-  function handleMouseUp(e) {
-    // Delay detection to prevent closing during mouseup phase when clicking bubble buttons themselves
-    setTimeout(() => {
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) {
-        hideBubble();
-      }
-    }, 100);
+    const left = rect.left + (rect.width / 2) - (_bubble.offsetWidth / 2);
+    let top = rect.top - _bubble.offsetHeight - 8;
+    // Selection near the top of the viewport: flip below rather than render off-screen
+    if (top < 4) top = rect.bottom + 8;
+
+    const maxLeft = window.innerWidth - _bubble.offsetWidth - 4;
+    _bubble.style.left = `${Math.max(4, Math.min(left, maxLeft))}px`;
+    _bubble.style.top = `${top}px`;
   }
 
   // Hide highlight bubble
@@ -1064,21 +1440,44 @@ const Highlight = (() => {
     }
   }
 
-  // Confirm highlight selection, write to storage
+  // Confirm highlight selection, write to storage.
+  // Stored as a block anchor (data-line) plus character offsets within that block's rendered
+  // text, so the highlight can be replayed exactly rather than searched for.
   async function applySelectedHighlight(color) {
     if (!_activeDocId) return;
 
     const selection = window.getSelection();
-    const text = selection.toString().trim();
-    if (!text) return;
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+
+    const text = selection.toString();
+    if (!text.trim()) return;
+
+    const range = selection.getRangeAt(0);
+    const block = BlockMap.getBlock(range.startContainer);
+    if (!block) return;
+
+    const start = BlockMap.offsetInBlock(block.blockEl, range.startContainer, range.startOffset);
+    let end;
+    if (BlockMap.getBlock(range.endContainer)?.blockEl === block.blockEl) {
+      end = BlockMap.offsetInBlock(block.blockEl, range.endContainer, range.endOffset);
+    } else {
+      // Selection ran past this block; clamp to the end of the anchor block
+      end = start + text.length;
+    }
+
+    if (start < 0 || end <= start) return;
 
     const highlight = {
-      text: text,
+      line: block.line,
+      start,
+      end,
+      text: block.blockEl.textContent.slice(start, end),
       color: color,
       createdAt: Date.now()
     };
 
-    await Storage.addHighlight(_activeDocId, highlight);
+    const saved = await Storage.addHighlight(_activeDocId, highlight);
+    _cache.push(saved);
 
     // Clear browser selection
     selection.removeAllRanges();
@@ -1090,109 +1489,69 @@ const Highlight = (() => {
     }
   }
 
-  // Render highlight effect: use safe DOM tree traversal, ensure only text nodes are modified, without polluting Markdown original HTML and code block attributes
-  async function applyHighlightsToDOM(container) {
-    if (!_activeDocId || !container) return;
+  // Render highlights by replaying stored block+offset anchors.
+  // Each stored range is redrawn by wrapping every text-node slice it covers in its own <mark>,
+  // which is what allows a highlight spanning <strong>/<em>/<a> to survive a re-render.
+  function applyHighlightsToDOM(container) {
+    if (!_activeDocId || !container || _cache.length === 0) return;
 
-    const highlights = await Storage.getHighlights(_activeDocId);
-    if (!highlights || highlights.length === 0) return;
-
-    // Use TreeWalker to filter only text nodes contained in regular typography, avoiding special nodes like pre, code, a links, etc. to prevent breaking code logic and links
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) => {
-        const parent = node.parentElement;
-        if (!parent) return NodeFilter.FILTER_REJECT;
-
-        const tagName = parent.tagName;
-        // Reject code blocks, links, script nodes, etc.
-        if (
-          tagName === 'CODE' || 
-          tagName === 'PRE' || 
-          tagName === 'SCRIPT' || 
-          parent.closest('pre') || 
-          parent.closest('code') || 
-          parent.closest('a')
-        ) {
-          return NodeFilter.FILTER_REJECT;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-
-    const textNodes = [];
-    let currentNode;
-    while (currentNode = walker.nextNode()) {
-      textNodes.push(currentNode);
+    // Group by block so each block's offsets are resolved against one stable textContent
+    const byLine = new Map();
+    for (const hl of _cache) {
+      if (hl.start === undefined) continue;
+      if (!byLine.has(hl.line)) byLine.set(hl.line, []);
+      byLine.get(hl.line).push(hl);
     }
 
-    // Sort by highlight string length from longest to shortest to prevent long strings from being truncated by short strings
-    const sortedHls = [...highlights].sort((a, b) => b.text.length - a.text.length);
+    for (const [line, hls] of byLine) {
+      const blockEl = BlockMap.getBlockByLine(line);
+      if (!blockEl) continue;
 
-    // Iterate through all eligible text nodes, safely replace with mark tags
-    textNodes.forEach(node => {
-      const parent = node.parentElement;
-      if (!parent) return;
+      const blockText = blockEl.textContent;
+      const resolved = [];
 
-      const text = node.nodeValue;
+      for (const hl of hls) {
+        let { start, end } = hl;
 
-      // Recursive text segmentation function to find the earliest matching item and split
-      function segmentText(str) {
-        if (!str) return [];
-
-        let earliestMatch = null;
-        let earliestIndex = -1;
-        let matchedHl = null;
-
-        for (const hl of sortedHls) {
-          if (!hl.text || hl.text.trim().length === 0) continue;
-
-          const index = str.toLowerCase().indexOf(hl.text.toLowerCase());
-          if (index !== -1) {
-            if (earliestIndex === -1 || index < earliestIndex) {
-              earliestIndex = index;
-              earliestMatch = hl.text;
-              matchedHl = hl;
-            } else if (index === earliestIndex) {
-              // Same start point, prioritize matching item with longer length
-              if (hl.text.length > earliestMatch.length) {
-                earliestMatch = hl.text;
-                matchedHl = hl;
-              }
-            }
-          }
+        // Offsets drift when the block is edited. Repair by searching for the stored text,
+        // scoped to this block only — never document-wide, which is what produced spurious
+        // marks on unrelated duplicate text before.
+        if (blockText.slice(start, end) !== hl.text) {
+          const idx = blockText.indexOf(hl.text);
+          if (idx === -1) continue;
+          start = idx;
+          end = idx + hl.text.length;
         }
-
-        if (earliestIndex !== -1) {
-          const before = str.substring(0, earliestIndex);
-          const match = str.substring(earliestIndex, earliestIndex + earliestMatch.length);
-          const after = str.substring(earliestIndex + earliestMatch.length);
-
-          const result = [];
-          if (before) result.push(document.createTextNode(before));
-
-          const mark = document.createElement('mark');
-          mark.className = `hl-${matchedHl.color}`;
-          mark.dataset.hlId = matchedHl.id;
-          mark.textContent = match;
-          result.push(mark);
-
-          if (after) {
-            result.push(...segmentText(after));
-          }
-          return result;
-        }
-
-        return [document.createTextNode(str)];
+        resolved.push({ hl, start, end });
       }
 
-      const segments = segmentText(text);
-      // If actual segmentation occurred (i.e. includes mark tags, or multiple nodes exist)
-      if (segments.length > 1 || (segments.length === 1 && segments[0].nodeType !== Node.TEXT_NODE)) {
-        const fragment = document.createDocumentFragment();
-        segments.forEach(seg => fragment.appendChild(seg));
-        parent.replaceChild(fragment, node);
+      // Wrap back-to-front: replacing a text node invalidates the offsets of everything after it
+      resolved.sort((a, b) => b.start - a.start);
+
+      for (const { hl, start, end } of resolved) {
+        const segments = BlockMap.segmentsInRange(blockEl, start, end);
+        for (const seg of segments) {
+          wrapTextSlice(seg.node, seg.from, seg.to, hl);
+        }
       }
-    });
+    }
+  }
+
+  // Wrap [from, to) of a single text node in a <mark>, splitting the node as needed
+  function wrapTextSlice(node, from, to, hl) {
+    if (!node.parentNode || from >= to) return;
+    // Never mark inside code or links — matches the exclusions the previous renderer applied
+    const parent = node.parentElement;
+    if (!parent || parent.closest('pre, code, a')) return;
+
+    const target = from > 0 ? node.splitText(from) : node;
+    if (to - from < target.nodeValue.length) target.splitText(to - from);
+
+    const mark = document.createElement('mark');
+    mark.className = `hl-${hl.color}`;
+    mark.dataset.hlId = hl.id;
+    target.parentNode.replaceChild(mark, target);
+    mark.appendChild(target);
   }
 
   // Double click highlight tag to delete highlight mark
@@ -1203,6 +1562,7 @@ const Highlight = (() => {
     e.stopPropagation();
     const hlId = mark.dataset.hlId;
     await Storage.removeHighlight(_activeDocId, hlId);
+    _cache = _cache.filter(h => h.id !== hlId);
 
     // Notify rendering update
     if (_onHighlightChangedCallback) {
@@ -1226,11 +1586,311 @@ const Manager = (() => {
   let _activeDocId = null;
   let _titleDebounceTimer = null;
   let _contentDebounceTimer = null;
+  const IMAGE_EXT_RE = /\.(png|jpe?g|gif|svg|webp|bmp)$/i;
+
+  function initScrollSync() {
+    const editorScrollDOM = Editor.getView()?.scrollDOM;
+    const previewPane = dom.previewPane;
+
+    if (!editorScrollDOM || !previewPane) return;
+
+    editorScrollDOM.addEventListener('scroll', () => {
+      if (SyncGuard.isBusy('editor')) return;
+
+      const view = Editor.getView();
+      if (!view) return;
+
+      const topInfo = view.lineBlockAtHeight(editorScrollDOM.scrollTop);
+      const docPos = topInfo.from;
+      const line = view.state.doc.lineAt(docPos).number;
+
+      SyncGuard.run('editor', () => scrollToPreviewLine(line), 60);
+    });
+
+    previewPane.addEventListener('scroll', () => {
+      if (SyncGuard.isBusy('preview')) return;
+
+      const marker = getTopmostVisibleMarker(previewPane);
+      if (marker) {
+        const line = parseInt(marker.dataset.line, 10);
+        if (!isNaN(line)) {
+          SyncGuard.run('preview', () => scrollToEditorLine(line), 60);
+        }
+      }
+    });
+
+    // Preview to Editor selection sync
+    document.addEventListener('selectionchange', handlePreviewSelectionChange);
+  }
+
+  // Mirror a preview selection back into the editor by mapping rendered offsets to source
+  // offsets through CodeMirror's syntax tree, anchored on the block that owns the selection.
+  function handlePreviewSelectionChange() {
+    if (!_activeDocId || SyncGuard.isBusy('preview')) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    if (!dom.mdBody.contains(range.commonAncestorContainer)) return;
+
+    const view = Editor.getView();
+    if (!view) return;
+
+    const startBlock = BlockMap.getBlock(range.startContainer);
+    const endBlock = BlockMap.getBlock(range.endContainer);
+    if (!startBlock) return;
+
+    // KaTeX output is regenerated rather than passed through, so its rendered text does not
+    // align with the source-derived map. Skip instead of mis-mapping.
+    if (startBlock.blockEl.querySelector('.katex')) return;
+
+    const startSrc = sourceOffsetFor(startBlock, range.startContainer, range.startOffset);
+    if (startSrc === null) return;
+
+    let endSrc;
+    if (endBlock && endBlock.blockEl === startBlock.blockEl) {
+      endSrc = sourceOffsetFor(startBlock, range.endContainer, range.endOffset, true);
+    } else if (endBlock) {
+      // Multi-block selection: anchor the tail in its own block
+      endSrc = sourceOffsetFor(endBlock, range.endContainer, range.endOffset, true);
+    }
+    if (endSrc === null || endSrc === undefined || endSrc <= startSrc) return;
+
+    SyncGuard.run('preview', () => Editor.setSelection(startSrc, endSrc));
+  }
+
+  // Translate a (node, offset) position inside a rendered block into a source document offset.
+  //
+  // Start and end boundaries are not symmetric. A start maps to where its character begins; an
+  // end must map to just past the last *included* character, otherwise the trailing markup
+  // (the closing ** of **bold**) gets swallowed into the selection.
+  function sourceOffsetFor(block, node, offset, isEnd = false) {
+    const view = Editor.getView();
+    if (!view) return null;
+
+    const renderedOffset = BlockMap.offsetInBlock(block.blockEl, node, offset);
+    if (renderedOffset < 0) return null;
+
+    const map = mapForBlock(block);
+    if (!map) return null;
+
+    if (isEnd) {
+      // Last rendered character inside the selection, then step past it
+      for (let i = renderedOffset - 1; i >= 0; i--) {
+        if (map.renToSrc.has(i)) return map.renToSrc.get(i) + 1;
+      }
+      return map.from;
+    }
+
+    // First rendered character at or after the boundary
+    for (let i = renderedOffset; i <= map.rendered.length; i++) {
+      if (map.renToSrc.has(i)) return map.renToSrc.get(i);
+    }
+    return map.from;
+  }
+
+  // Build the source<->rendered map for a block, and verify the block really owns that source
+  // range before trusting it.
+  //
+  // Not every block type gets a .sync-marker (tables, fenced code, hr and raw html have none),
+  // so an anchor can end up covering source text that belongs to a *later* unanchored block.
+  // Comparing the map's reconstructed text against what the block actually renders catches
+  // every such mismatch at once, which is far more robust than trying to emit a marker for
+  // each remaining block type.
+  function mapForBlock(block) {
+    const span = sourceRangeOfLine(block.line);
+    if (!span) return null;
+
+    const map = Editor.mapBlock(span.from, span.to);
+    if (!map) return null;
+
+    const normalize = (s) => s.replace(/\s+/g, ' ').trim();
+    const fromSource = normalize(map.rendered);
+    const fromDom = normalize(block.blockEl.textContent);
+
+    // The anchor is only trustworthy when the block renders what its source range says it should
+    if (!fromSource.startsWith(fromDom) && !fromDom.startsWith(fromSource)) return null;
+
+    map.from = span.from;
+    return map;
+  }
+
+  // Source character range covered by the block anchored at `line`, ending where the next
+  // anchored block begins.
+  function sourceRangeOfLine(line) {
+    const view = Editor.getView();
+    if (!view) return null;
+    const doc = view.state.doc;
+    if (line < 1 || line > doc.lines) return null;
+
+    const from = doc.line(line).from;
+
+    // The next marker's line bounds this block
+    let nextLine = null;
+    for (const marker of getSyncMarkers()) {
+      const l = parseInt(marker.dataset.line, 10);
+      if (!isNaN(l) && l > line && (nextLine === null || l < nextLine)) nextLine = l;
+    }
+
+    const to = (nextLine !== null && nextLine <= doc.lines)
+      ? doc.line(nextLine).from
+      : doc.length;
+
+    return { from, to };
+  }
+
+  function getSyncMarkers() {
+    return Array.from(dom.mdBody.querySelectorAll('.sync-marker'));
+  }
+
+  function scrollToPreviewLine(line) {
+    const markers = getSyncMarkers();
+    let bestMarker = null;
+    let minDiff = Infinity;
+    for (const marker of markers) {
+      const markerLine = parseInt(marker.dataset.line, 10);
+      if (markerLine === line) {
+        bestMarker = marker;
+        break;
+      } else if (markerLine < line && (line - markerLine < minDiff)) {
+        minDiff = line - markerLine;
+        bestMarker = marker;
+      }
+    }
+    
+    if (bestMarker) {
+      const parent = bestMarker.parentElement;
+      if (parent) {
+        dom.previewPane.scrollTop = parent.offsetTop - 20;
+      }
+    }
+  }
+
+  function getTopmostVisibleMarker(container) {
+    const markers = getSyncMarkers();
+    const scrollTop = container.scrollTop;
+
+    let bestMarker = null;
+    for (const marker of markers) {
+      const parent = marker.parentElement;
+      if (parent && parent.offsetTop >= scrollTop + 20) {
+        return bestMarker || marker;
+      }
+      bestMarker = marker;
+    }
+    return bestMarker;
+  }
+
+  function scrollToEditorLine(line) {
+    const view = Editor.getView();
+    if (!view) return;
+    const doc = view.state.doc;
+    if (line >= 1 && line <= doc.lines) {
+      const lineInfo = doc.line(line);
+      const top = view.lineBlockAt(lineInfo.from).top;
+      view.scrollDOM.scrollTop = top;
+    }
+  }
+
+  // Mirror an editor selection into the preview by mapping source offsets to rendered offsets
+  // through CodeMirror's syntax tree, so markup characters (**, [](), `, #) are handled instead
+  // of breaking the match the way a raw text search did.
+  function handleEditorSelectionChange(state) {
+    if (!_activeDocId || SyncGuard.isBusy('editor')) return;
+
+    const { from, to } = state.selection.main;
+    if (from === to) return;
+
+    const text = state.sliceDoc(from, to);
+    if (!text || text.trim() === '') return;
+
+    const startLine = state.doc.lineAt(from).number;
+    const endLine = state.doc.lineAt(to).number;
+
+    const startBlock = blockForLine(startLine);
+    if (!startBlock) return;
+    if (startBlock.blockEl.querySelector('.katex')) return;
+
+    const startOffset = renderedOffsetFor(startBlock, from);
+    if (startOffset === null) return;
+
+    // A selection running past this block ends at the tail of its own block
+    const endBlock = (endLine === startLine) ? startBlock : (blockForLine(endLine) || startBlock);
+    const endOffset = (endBlock.blockEl === startBlock.blockEl)
+      ? renderedOffsetFor(startBlock, to, true)
+      : endBlock.blockEl.textContent.length;
+
+    if (endOffset === null || endOffset <= startOffset) return;
+
+    const range = (endBlock.blockEl === startBlock.blockEl)
+      ? BlockMap.rangeFromOffsets(startBlock.blockEl, startOffset, endOffset)
+      : spanningRange(startBlock.blockEl, startOffset, endBlock.blockEl, endOffset);
+    if (!range) return;
+
+    SyncGuard.run('editor', () => {
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      dom.previewPane.scrollTop = startBlock.blockEl.offsetTop - 40;
+    });
+  }
+
+  // Resolve the rendered block anchored at or immediately before `line`
+  function blockForLine(line) {
+    let best = null;
+    let minDiff = Infinity;
+    for (const marker of getSyncMarkers()) {
+      const markerLine = parseInt(marker.dataset.line, 10);
+      if (!isNaN(markerLine) && markerLine <= line && (line - markerLine) < minDiff) {
+        minDiff = line - markerLine;
+        best = { blockEl: marker.parentElement, line: markerLine };
+      }
+    }
+    return (best && best.blockEl) ? best : null;
+  }
+
+  // Translate a source document offset into an offset within a rendered block's text
+  // Inverse of sourceOffsetFor, with the same start/end asymmetry: a source position sitting
+  // inside markup (between the asterisks of **) has no rendered counterpart, so a start scans
+  // forward to the first rendered character and an end scans back to the last included one.
+  function renderedOffsetFor(block, sourcePos, isEnd = false) {
+    const map = mapForBlock(block);
+    if (!map) return null;
+
+    if (isEnd) {
+      for (let i = sourcePos - 1; i >= map.from; i--) {
+        if (map.srcToRen.has(i)) return map.srcToRen.get(i) + 1;
+      }
+      return 0;
+    }
+
+    const limit = map.from + map.rendered.length + (sourcePos - map.from);
+    for (let i = sourcePos; i <= limit; i++) {
+      if (map.srcToRen.has(i)) return map.srcToRen.get(i);
+    }
+    return 0;
+  }
+
+  // Range spanning from an offset in one block to an offset in a later block
+  function spanningRange(startEl, startOffset, endEl, endOffset) {
+    const head = BlockMap.rangeFromOffsets(startEl, startOffset, startEl.textContent.length);
+    const tail = BlockMap.rangeFromOffsets(endEl, 0, endOffset);
+    if (!head || !tail) return null;
+
+    const range = document.createRange();
+    range.setStart(head.startContainer, head.startOffset);
+    range.setEnd(tail.endContainer, tail.endOffset);
+    return range;
+  }
 
   // DOM Element References
   const dom = {
     sidebar: document.getElementById('sidebar'),
+    splitContainer: document.getElementById('splitContainer'),
     editorPane: document.getElementById('editorPane'),
+    editorContainer: document.getElementById('editorContainer'),
+    paneResizer: document.getElementById('paneResizer'),
     previewPane: document.getElementById('previewPane'),
     emptyState: document.getElementById('emptyState'),
     mdBody: document.getElementById('mdBody'),
@@ -1240,7 +1900,6 @@ const Manager = (() => {
     newFolderBtn: document.getElementById('newFolderBtn'),
     importBtn: document.getElementById('importBtn'),
     fileInput: document.getElementById('fileInput'),
-    toggleViewBtn: document.getElementById('toggleViewBtn'),
     downloadMdBtn: document.getElementById('downloadMdBtn'),
     exportPdfBtn: document.getElementById('exportPdfBtn'),
     dragOverlay: document.getElementById('dragOverlay')
@@ -1260,7 +1919,7 @@ const Manager = (() => {
         const mdText = data.activeMD;
         if (mdText && typeof mdText === 'string' && mdText.trim().length > 0) {
           let title = 'Gemini Export Conversation';
-          
+
           if (data.importFileName) {
             // It's a local file import, use the filename
             title = data.importFileName.replace(/\.(md|markdown|txt)$/i, '');
@@ -1281,7 +1940,6 @@ const Manager = (() => {
           // Set as currently active editing state
           _activeDocId = doc.id;
           localStorage.setItem('mdm_active_doc_id', doc.id);
-          localStorage.setItem('mdm_view_mode', 'dual'); // Force dual view on import
 
           // Synchronously clear cache to avoid future interference
           await browserAPI.storage.local.remove(['activeMD', 'importFileName']);
@@ -1299,12 +1957,18 @@ const Manager = (() => {
 
     // 2. Initialize each sub-function component, connecting relation callbacks
     FolderTree.init(loadDocument);
-    Editor.init(onContentChange);
+    Editor.init({
+      onChange: onContentChange,
+      onSelectionChange: handleEditorSelectionChange,
+      onDrop: handleEditorDrop,
+      onPaste: handleEditorPaste
+    });
     Search.init(loadDocument);
     Highlight.init(onHighlightChanged);
 
-    // 3. Bind top toolbar global events
+    // 3. Bind top toolbar global events & pane resizer
     bindToolbarEvents();
+    initSplitPaneResizer();
 
     // 4. Bind full-screen drag-and-drop import events
     bindDragAndDropEvents();
@@ -1312,8 +1976,11 @@ const Manager = (() => {
     // 5. Check auto import
     await checkAutoImport();
 
-    // 6. Restore previous states (sidebar collapsed state, dual-pane state, last opened document)
+    // 6. Restore previous states (sidebar collapsed state, last opened document)
     restoreStates();
+
+    // 7. Initialize Scroll Sync
+    initScrollSync();
   }
 
   // Restore previous layout and document states
@@ -1323,10 +1990,6 @@ const Manager = (() => {
     if (isSidebarCollapsed) {
       dom.sidebar.classList.add('collapsed');
     }
-
-    // Restore dual-pane mode
-    const savedViewMode = localStorage.getItem('mdm_view_mode') || 'dual';
-    setViewMode(savedViewMode);
 
     // Restore opened document
     const lastDocId = localStorage.getItem('mdm_active_doc_id');
@@ -1343,27 +2006,24 @@ const Manager = (() => {
     _activeDocId = docId;
 
     if (!docId) {
-      // Show empty state, hide editor
+      // Show empty state, hide editor and resizer
       localStorage.removeItem('mdm_active_doc_id');
       dom.emptyState.classList.remove('hidden');
       dom.editorPane.classList.add('collapsed');
+      if (dom.paneResizer) dom.paneResizer.classList.add('collapsed');
       dom.mdBody.textContent = '';
       dom.docTitleInput.value = '';
-      
+
       // Update sub-states
       FolderTree.setActiveDoc(null);
-      Highlight.setActiveDoc(null);
+      await Highlight.setActiveDoc(null);
       return;
     }
 
     localStorage.setItem('mdm_active_doc_id', docId);
     dom.emptyState.classList.add('hidden');
-    
-    // If not in preview-only mode, show editor pane
-    const currentMode = localStorage.getItem('mdm_view_mode') || 'dual';
-    if (currentMode !== 'preview') {
-      dom.editorPane.classList.remove('collapsed');
-    }
+    dom.editorPane.classList.remove('collapsed');
+    if (dom.paneResizer) dom.paneResizer.classList.remove('collapsed');
 
     const docMeta = Storage.getDocMeta()[docId];
     const content = await Storage.getDocContent(docId);
@@ -1377,19 +2037,16 @@ const Manager = (() => {
     // Render preview
     renderMarkdown(content);
 
-    // Apply and render highlight data
-    Highlight.setActiveDoc(docId);
-    await Highlight.applyHighlightsToDOM(dom.mdBody);
-
-    // Update bookmark button state
-    updateBookmarkButton(docMeta.isBookmarked);
+    // Apply and render highlight data (setActiveDoc warms the highlight cache)
+    await Highlight.setActiveDoc(docId);
+    Highlight.applyHighlightsToDOM(dom.mdBody);
 
     // Synchronize directory tree highlight display
     FolderTree.setActiveDoc(docId);
 
     // Reset scrollbar
     dom.previewPane.scrollTop = 0;
-    
+
     // Force a line number regeneration and alignment
     Editor.updateLineNumbers();
   }
@@ -1406,21 +2063,64 @@ const Manager = (() => {
     processed = processed.replace(/\$\$([\s\S]*?)\$\$/g, (match, latex) => {
       const idx = latexBlocks.length;
       latexBlocks.push({ type: 'block', latex: latex.trim() });
-      return `%%LATEX_BLOCK_${idx}%%`;
+      const newlines = (match.match(/\n/g) || []).length;
+      return `%%LATEX_BLOCK_${idx}_NL_${newlines}%%`;
     });
 
     // Protect inline formulas $ ... $ (excluding double dollar signs)
     processed = processed.replace(/(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)/g, (match, latex) => {
       const idx = latexBlocks.length;
       latexBlocks.push({ type: 'inline', latex: latex.trim() });
-      return `%%LATEX_INLINE_${idx}%%`;
+      const newlines = (match.match(/\n/g) || []).length;
+      return `%%LATEX_INLINE_${idx}_NL_${newlines}%%`;
     });
 
-    // 2. Use marked to parse Markdown into HTML
-    const html = marked.parse(processed, {
+    // 2. Use marked to parse Markdown into HTML tokens
+    const options = {
       gfm: true,
       breaks: false,
-    });
+    };
+    const tokens = marked.lexer(processed, options);
+
+    // Count source lines spanned by a raw token/item, including newlines swallowed by LaTeX placeholders
+    function rawLineCount(raw) {
+      const visibleLines = (raw.match(/\n/g) || []).length;
+      const hiddenLines = [...raw.matchAll(/%%LATEX_(?:BLOCK|INLINE)_\d+_NL_(\d+)%%/g)].reduce((sum, m) => sum + parseInt(m[1]), 0);
+      return visibleLines + hiddenLines;
+    }
+
+    // Inject source line markers for scroll synchronization
+    function injectSourceLines(tokensList, startLine) {
+      let line = startLine;
+      for (const token of tokensList) {
+        if (token.type === 'paragraph' || token.type === 'heading' || token.type === 'blockquote') {
+          if (token.tokens) {
+            token.tokens.unshift({
+              type: 'html',
+              raw: '',
+              text: `<span data-line="${line}" class="sync-marker"></span>`
+            });
+          }
+        } else if (token.type === 'list') {
+          let listLine = line;
+          for (const item of token.items) {
+            if (item.tokens) {
+              item.tokens.unshift({
+                type: 'html',
+                raw: '',
+                text: `<span data-line="${listLine}" class="sync-marker"></span>`
+              });
+            }
+            listLine += rawLineCount(item.raw);
+          }
+        }
+
+        line += rawLineCount(token.raw);
+      }
+    }
+
+    injectSourceLines(tokens, 1);
+    const html = marked.parser(tokens, options);
 
     // 3. Replace KaTeX placeholders with real math HTML snippets
     let finalHtml = html;
@@ -1438,17 +2138,28 @@ const Manager = (() => {
           : `<code>$${item.latex}$</code>`;
       }
 
-      const placeholder = item.type === 'block'
-        ? `%%LATEX_BLOCK_${idx}%%`
-        : `%%LATEX_INLINE_${idx}%%`;
+      const placeholderRegexStr = item.type === 'block'
+        ? `%%LATEX_BLOCK_${idx}_NL_\\d+%%`
+        : `%%LATEX_INLINE_${idx}_NL_\\d+%%`;
 
       // Restore block formula placeholders wrapped in <p> tags
       finalHtml = finalHtml.replace(
-        new RegExp(`<p>\\s*${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</p>`, 'g'),
+        new RegExp(`<p>\\s*<span data-line="\\d+" class="sync-marker"><\\/span>\\s*${placeholderRegexStr}\\s*<\\/p>`, 'g'),
+        (match) => {
+          // Extract the injected span so we don't lose the scroll marker
+          const spanMatch = match.match(/<span data-line="\d+" class="sync-marker"><\/span>/);
+          const span = spanMatch ? spanMatch[0] : '';
+          return item.type === 'block' ? `<div class="katex-display">${span}${rendered}</div>` : `${span}${rendered}`;
+        }
+      );
+      
+      finalHtml = finalHtml.replace(
+        new RegExp(`<p>\\s*${placeholderRegexStr}\\s*<\\/p>`, 'g'),
         item.type === 'block' ? `<div class="katex-display">${rendered}</div>` : rendered
       );
+      
       finalHtml = finalHtml.replace(
-        new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+        new RegExp(placeholderRegexStr, 'g'),
         rendered
       );
     });
@@ -1456,15 +2167,25 @@ const Manager = (() => {
     const finalDoc = new DOMParser().parseFromString(finalHtml, "text/html");
     dom.mdBody.replaceChildren(...finalDoc.body.childNodes);
 
-    // 4. Lazy-load local assets and attach info for interaction
+    // 4. Lazy-load local physical assets and attach info for interaction
     const images = dom.mdBody.querySelectorAll('img');
     images.forEach(async (img) => {
-      const originalSrc = img.getAttribute('src');
+      const originalSrc = img.getAttribute('src') || '';
       img.dataset.mdSrc = originalSrc;
       img.dataset.mdAlt = img.getAttribute('alt') || '';
-      if (originalSrc.startsWith('local://')) {
-        const assetId = originalSrc.replace('local://', '');
-        const blob = await Storage.getAsset(assetId);
+
+      // Tag images sitting in a paragraph that carries no prose, so they render as
+      // centred blocks. textContent covers the .sync-marker span (always empty) and
+      // any surrounding text, which CSS cannot distinguish. Images written on
+      // consecutive lines share one paragraph, so this must not require a lone image.
+      const holder = img.closest('p');
+      if (holder && !holder.textContent.trim()) {
+        img.classList.add('md-block-img');
+        // The paragraph carries the page-break guard: see .md-figure in the print styles
+        holder.classList.add('md-figure');
+      }
+      if (Storage.isLocalAssetRef(originalSrc)) {
+        const blob = await Storage.getAsset(originalSrc);
         if (blob) {
           img.src = URL.createObjectURL(blob);
         }
@@ -1492,12 +2213,12 @@ const Manager = (() => {
   }
 
   // Linkage callback after highlight changes
-  async function onHighlightChanged() {
+  function onHighlightChanged() {
     if (!_activeDocId) return;
     // Re-render preview body and apply highlight effects
     const content = Editor.getContent();
     renderMarkdown(content);
-    await Highlight.applyHighlightsToDOM(dom.mdBody);
+    Highlight.applyHighlightsToDOM(dom.mdBody);
   }
 
   // --- Image Interaction Logic (Toolbar & Drag-and-Drop) ---
@@ -1524,7 +2245,7 @@ const Manager = (() => {
     // Position toolbar in the top-right corner of the image
     const rect = img.getBoundingClientRect();
     const bodyWidth = document.body.clientWidth;
-    
+
     toolbar.style.top = `${rect.top + 8}px`;
     toolbar.style.left = 'auto';
     toolbar.style.right = `${bodyWidth - rect.right + 8}px`;
@@ -1540,11 +2261,11 @@ const Manager = (() => {
     if (!_activeDocId) return;
     const syntax = getImageMarkdownSyntax(img);
     let content = Editor.getContent();
-    
+
     // Find the syntax in the content
     const idx = content.indexOf(syntax);
     if (idx === -1) return; // not found
-    
+
     content = content.replace(syntax, '');
     content = content.trim();
 
@@ -1574,7 +2295,7 @@ const Manager = (() => {
       hideImageToolbar();
     }
   });
-  
+
   dom.previewPane.addEventListener('scroll', hideImageToolbar);
 
   document.getElementById('imgBtnTop')?.addEventListener('click', () => {
@@ -1619,12 +2340,12 @@ const Manager = (() => {
     if (target !== dom.mdBody && !target.classList.contains('md-body')) {
       const rect = target.getBoundingClientRect();
       const isTop = (e.clientY - rect.top) < (rect.height / 2);
-      
+
       if (!_dropIndicator) {
         _dropIndicator = document.createElement('div');
         _dropIndicator.className = 'drop-indicator';
       }
-      
+
       if (isTop) {
         target.parentNode.insertBefore(_dropIndicator, target);
       } else {
@@ -1637,21 +2358,21 @@ const Manager = (() => {
     if (!_draggedImageSyntax) return;
     e.preventDefault();
     e.stopPropagation(); // prevent global file drop
-    
+
     if (_dropIndicator) {
       let content = Editor.getContent();
       const syntax = _draggedImageSyntax;
-      
+
       // Remove original syntax
       content = content.replace(syntax, '');
-      
+
       // We need to insert the syntax into the DOM temporarily to find its new position, 
       // but since we rebuild from markdown, it's easier to append to the end 
       // or implement a rough text insertion based on block order.
       // For simplicity and exact placement, we use the drop indicator's sibling
       const nextSibling = _dropIndicator.nextElementSibling;
       const prevSibling = _dropIndicator.previousElementSibling;
-      
+
       // Rough mapping: find text of next sibling in content
       if (nextSibling && nextSibling.textContent.trim()) {
         const siblingText = nextSibling.textContent.trim().substring(0, 20);
@@ -1671,39 +2392,103 @@ const Manager = (() => {
           content += '\n\n' + syntax;
         }
       } else {
-         // fallback to top
-         content = syntax + '\n\n' + content;
+        // fallback to top
+        content = syntax + '\n\n' + content;
       }
-      
+
       Editor.setContent(content.trim());
       onContentChange(Editor.getContent());
       _dropIndicator.remove();
     }
   });
 
-  // Unified view multi-column mode setting
-  function setViewMode(mode) {
-    localStorage.setItem('mdm_view_mode', mode);
+  // Initialize draggable split-pane resizer (IDE-style)
+  function initSplitPaneResizer() {
+    if (!dom.paneResizer || !dom.editorPane || !dom.splitContainer) return;
 
-    if (mode === 'dual') {
-      // Dual pane
-      dom.editorPane.classList.remove('collapsed');
-      dom.previewPane.style.display = 'block';
-      dom.toggleViewBtn.textContent = 'Split';
-    } else if (mode === 'edit') {
-      // Edit only
-      dom.editorPane.classList.remove('collapsed');
-      dom.previewPane.style.display = 'none';
-      dom.toggleViewBtn.textContent = 'Edit Only';
-    } else if (mode === 'preview') {
-      // Preview only
-      dom.editorPane.classList.add('collapsed');
-      dom.previewPane.style.display = 'block';
-      dom.toggleViewBtn.textContent = 'Preview Only';
-    }
-    
-    // Rearrange editor line numbers after viewport size change
-    Editor.updateLineNumbers();
+    // Restore saved split ratio (percentage, default 50%)
+    const savedRatio = parseFloat(localStorage.getItem('mdm_split_ratio')) || 50;
+    const clampedRatio = Math.min(85, Math.max(15, savedRatio));
+    dom.editorPane.style.width = `${clampedRatio}%`;
+
+    let isDragging = false;
+
+    const onPointerDown = (e) => {
+      // Only primary mouse button (left button) or touch
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      isDragging = true;
+
+      dom.paneResizer.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      if (dom.paneResizer.setPointerCapture && e.pointerId !== undefined) {
+        try {
+          dom.paneResizer.setPointerCapture(e.pointerId);
+        } catch (_) { }
+      }
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    };
+
+    const onPointerMove = (e) => {
+      if (!isDragging) return;
+      e.preventDefault();
+
+      const splitRect = dom.splitContainer.getBoundingClientRect();
+      const containerWidth = splitRect.width;
+      if (containerWidth <= 0) return;
+
+      // Calculate exact mouse position relative to split-container left edge
+      const exactOffset = e.clientX - splitRect.left;
+
+      // Clamp editor width: min 180px, max (containerWidth - 180px)
+      const minPx = Math.min(180, containerWidth * 0.15);
+      const maxPx = Math.max(containerWidth - 180, containerWidth * 0.85);
+      const clampedPx = Math.min(maxPx, Math.max(minPx, exactOffset));
+
+      const percent = (clampedPx / containerWidth) * 100;
+      dom.editorPane.style.width = `${percent}%`;
+
+      // Live measure CodeMirror view layout
+      Editor.updateLineNumbers();
+    };
+
+    const onPointerUp = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+
+      dom.paneResizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+
+      if (dom.paneResizer.releasePointerCapture && e.pointerId !== undefined) {
+        try {
+          dom.paneResizer.releasePointerCapture(e.pointerId);
+        } catch (_) { }
+      }
+
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+
+      // Save ratio to storage
+      const currentPercent = parseFloat(dom.editorPane.style.width) || 50;
+      localStorage.setItem('mdm_split_ratio', currentPercent.toFixed(2));
+      Editor.updateLineNumbers();
+    };
+
+    dom.paneResizer.addEventListener('pointerdown', onPointerDown);
+
+    // Double click resizer to reset to 50:50
+    dom.paneResizer.addEventListener('dblclick', () => {
+      dom.editorPane.style.width = '50%';
+      localStorage.setItem('mdm_split_ratio', '50');
+      Editor.updateLineNumbers();
+    });
   }
 
   // Bind global toolbar events
@@ -1749,71 +2534,110 @@ const Manager = (() => {
       }
     });
 
-    // View mode toggle (cycle between "Dual pane -> Edit only -> Preview only")
-    dom.toggleViewBtn.addEventListener('click', () => {
-      const currentMode = localStorage.getItem('mdm_view_mode') || 'dual';
-      if (currentMode === 'dual') {
-        setViewMode('edit');
-      } else if (currentMode === 'edit') {
-        setViewMode('preview');
-      } else {
-        setViewMode('dual');
-      }
-    });
-
-    // Download MD file (ZIP mode if it contains local assets)
+    // Download MD file (Bundled into .7z archive if it contains local image assets)
     dom.downloadMdBtn.addEventListener('click', async () => {
       if (!_activeDocId) return;
       const docMeta = Storage.getDocMeta()[_activeDocId];
+      if (!docMeta) return;
+
+      const safeTitle = (docMeta.title || 'Document').replace(/[/\\?%*:|"<>]/g, '_');
       let content = Editor.getContent();
 
-      // Find all local:// assets
-      const regex = /!\[.*?\]\((local:\/\/[^)]+)\)/g;
-      const matches = [...content.matchAll(regex)];
-      
-      if (matches.length > 0 && typeof JSZip !== 'undefined') {
-        const zip = new JSZip();
-        const assetsFolder = zip.folder("assets");
-        
-        for (const match of matches) {
-          const localUri = match[1];
-          const assetId = localUri.replace('local://', '');
-          const blob = await Storage.getAsset(assetId);
-          
+      // Find all local image asset references (e.g. assets/..., ./assets/..., local://...)
+      const imgRegex = /!\[.*?\]\(((?:assets\/|\.\/assets\/|local:\/\/)[^)]+)\)|<img.*?src=["']((?:assets\/|\.\/assets\/|local:\/\/)[^"']+)["']/gi;
+      const matches = [...content.matchAll(imgRegex)];
+      const assetsToBundle = new Map();
+
+      for (const match of matches) {
+        const rawUri = match[1] || match[2];
+        if (!rawUri) continue;
+
+        const filename = Storage.normalizeAssetPath(rawUri);
+        const targetRelativePath = `assets/${filename}`;
+
+        // Normalize Markdown link to relative physical path
+        if (rawUri !== targetRelativePath) {
+          content = content.replaceAll(rawUri, targetRelativePath);
+        }
+
+        if (!assetsToBundle.has(targetRelativePath)) {
+          const blob = await Storage.getAsset(rawUri);
           if (blob) {
-            assetsFolder.file(assetId, blob);
-            content = content.replace(localUri, `assets/${assetId}`);
+            assetsToBundle.set(targetRelativePath, blob);
           }
         }
-        
-        zip.file(`${docMeta.title}.md`, content);
-        const zipBlob = await zip.generateAsync({type:"blob"});
-        const url = URL.createObjectURL(zipBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${docMeta.title}.zip`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } else {
-        // Normal single MD download
-        const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${docMeta.title}.md`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
+
+      if (assetsToBundle.size > 0 && typeof SevenZip !== 'undefined') {
+        try {
+          const sevenZip = await SevenZip({
+            locateFile: (file) => (typeof browser !== 'undefined' && browser.runtime?.getURL ? browser.runtime.getURL('lib/' + file) : 'lib/' + file)
+          });
+
+          const mdFileName = `${safeTitle}.md`;
+          const archiveName = `${safeTitle}.7z`;
+
+          // Write markdown file to virtual 7z root
+          sevenZip.FS.writeFile(mdFileName, content);
+
+          // Create assets directory
+          try {
+            sevenZip.FS.mkdir('assets');
+          } catch (_) { }
+
+          // Write each asset to virtual FS
+          for (const [relPath, blob] of assetsToBundle.entries()) {
+            const arrayBuffer = await blob.arrayBuffer();
+            sevenZip.FS.writeFile(relPath, new Uint8Array(arrayBuffer));
+          }
+
+          // Call 7z to create archive
+          sevenZip.callMain(['a', archiveName, mdFileName, 'assets']);
+
+          const archiveBytes = sevenZip.FS.readFile(archiveName);
+          const archiveBlob = new Blob([archiveBytes], { type: 'application/x-7z-compressed' });
+          const url = URL.createObjectURL(archiveBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = archiveName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+          // Cleanup virtual FS
+          try {
+            sevenZip.FS.unlink(archiveName);
+            sevenZip.FS.unlink(mdFileName);
+            for (const relPath of assetsToBundle.keys()) {
+              sevenZip.FS.unlink(relPath);
+            }
+          } catch (_) { }
+          return;
+        } catch (err) {
+          console.error('7z archive creation failed, falling back to .md download:', err);
+        }
+      }
+
+      // Normal single MD download if no local assets or fallback
+      const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeTitle}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
 
     // Export PDF (calls print)
-    dom.exportPdfBtn.addEventListener('click', () => {
+    dom.exportPdfBtn.addEventListener('click', async () => {
+      await downscaleImagesForPrint();
       window.print();
     });
+
+    window.addEventListener('afterprint', restoreImagesAfterPrint);
 
     // Document title input box change event (300ms debounce update title metadata)
     dom.docTitleInput.addEventListener('input', () => {
@@ -1838,14 +2662,180 @@ const Manager = (() => {
     });
   }
 
-  // Read file content as Data URL
-  function readFileAsDataURL(file) {
+  // Helper: Compress image into binary Blob (Zero Base64)
+  function compressImage(file, maxWidth = 1200, quality = 0.8) {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => resolve(e.target.result);
-      reader.onerror = e => reject(e);
-      reader.readAsDataURL(file);
+      if (!file || !(file instanceof Blob)) {
+        return reject(new TypeError('compressImage: file must be a Blob or File'));
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          return resolve(file);
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            resolve(file);
+          }
+        }, 'image/webp', quality);
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file);
+      };
+
+      img.src = objectUrl;
     });
+  }
+
+  // Firefox's PDF writer decodes every image to raw RGB and stores it as FlateDecode,
+  // so PDF size tracks pixel count, not file size. Swap in narrower renditions for the
+  // print pass only, leaving the on-screen assets untouched.
+  const PRINT_MAX_WIDTH = 900;
+  const _printSwaps = [];
+
+  async function downscaleImagesForPrint() {
+    for (const img of dom.mdBody.querySelectorAll('img')) {
+      const mdSrc = img.dataset.mdSrc || '';
+      if (!Storage.isLocalAssetRef(mdSrc)) continue;
+      // naturalWidth is 0 while an image is still decoding: fall through and let compressImage decide
+      if (img.naturalWidth && img.naturalWidth <= PRINT_MAX_WIDTH) continue;
+
+      try {
+        const blob = await Storage.getAsset(mdSrc);
+        if (!blob) continue;
+        // Re-encode lossy: the smoothing compresses far better than a lossless raster
+        const printBlob = await compressImage(blob, PRINT_MAX_WIDTH, 0.8);
+        const url = URL.createObjectURL(printBlob);
+        _printSwaps.push({ img, originalSrc: img.src, url });
+        img.src = url;
+        // Print must not start before the replacement is decoded and laid out
+        await img.decode().catch(() => { });
+      } catch (err) {
+        console.error('Print downscale failed, keeping full-resolution image', err);
+      }
+    }
+  }
+
+  function restoreImagesAfterPrint() {
+    while (_printSwaps.length) {
+      const { img, originalSrc, url } = _printSwaps.pop();
+      img.src = originalSrc;
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // Compress an image file and persist it as an asset, returning its relative path
+  async function saveImageFile(file) {
+    const blob = await compressImage(file);
+    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return Storage.saveAsset(blob, cleanName);
+  }
+
+  // Process multi-file import: automatically replace local image links in Markdown with physical relative paths
+  async function processFiles(fileObjs) {
+    const mdFiles = fileObjs.filter(f => f.file.name.match(/\.(md|markdown|txt)$/i));
+    const imgFiles = fileObjs.filter(f => IMAGE_EXT_RE.test(f.file.name));
+
+    if (mdFiles.length === 0) {
+      if (imgFiles.length === 0) {
+        alert('No Markdown file found, please ensure it contains .md or .txt files.');
+        return;
+      }
+
+      // Image-only import: append to the open document, or create one named after the first image
+      if (!_activeDocId) {
+        const title = imgFiles[0].file.name.replace(/\.[^.]+$/, '');
+        const doc = await Storage.createDoc(title, '');
+        FolderTree.render();
+        await loadDocument(doc.id);
+      }
+
+      let content = Editor.getContent();
+      const wasEmpty = content.trim() === '';
+      for (const img of imgFiles) {
+        try {
+          const localPath = await saveImageFile(img.file);
+          content += `\n![${img.file.name}](${localPath})\n`;
+        } catch (err) {
+          console.error('Image compression failed', err);
+        }
+      }
+      if (wasEmpty) content = content.replace(/^\n+/, '');
+
+      Editor.setContent(content);
+      await Storage.updateDocContent(_activeDocId, content);
+      renderMarkdown(content);
+      if (dom.fileInput) dom.fileInput.value = '';
+      return;
+    }
+
+    // For each imported md file
+    for (const mdObj of mdFiles) {
+      try {
+        let mdText = await readFileAsText(mdObj.file);
+
+        // Find image links in mdText: ![alt](url) or <img src="url">
+        const urlRegex = /!\[.*?\]\((.*?)\)|<img.*?src=["'](.*?)["']/gi;
+        let match;
+        const urlsToReplace = new Set();
+        while ((match = urlRegex.exec(mdText)) !== null) {
+          const url = match[1] || match[2];
+          if (url && !url.startsWith('http') && !url.startsWith('data:')) {
+            urlsToReplace.add(url);
+          }
+        }
+
+        for (const url of urlsToReplace) {
+          const cleanUrl = Storage.normalizeAssetPath(url);
+          // Find matching local image
+          const matchedImg = imgFiles.find(img => {
+            return img.path.endsWith(cleanUrl) || cleanUrl.endsWith(img.file.name) || img.file.name === cleanUrl;
+          });
+
+          if (matchedImg) {
+            try {
+              const localPath = await saveImageFile(matchedImg.file);
+              // Globally replace this local link with our relative physical path
+              mdText = mdText.split(url).join(localPath);
+            } catch (err) {
+              console.error('Image processing failed during import', err);
+            }
+          }
+        }
+
+        const title = mdObj.file.name.replace(/\.(md|markdown|txt)$/i, '');
+        const doc = await Storage.createDoc(title, mdText);
+        FolderTree.render();
+        loadDocument(doc.id);
+      } catch (err) {
+        console.error('Import file parsing error:', err);
+        alert('Import file parsing failed: ' + err.message);
+      }
+    }
+
+    if (dom.fileInput) dom.fileInput.value = '';
   }
 
   // Recursively traverse folder tree and get all files
@@ -1906,112 +2896,6 @@ const Manager = (() => {
     return files;
   }
 
-  // Helper: Compress image before saving
-  function compressImage(file, maxWidth = 1200, quality = 0.8) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          let width = img.width;
-          let height = img.height;
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/webp', quality));
-        };
-        img.onerror = reject;
-        img.src = e.target.result;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // Process multi-file import: automatically replace local image links in Markdown with Asset Pool refs
-  async function processFiles(fileObjs) {
-    const mdFiles = fileObjs.filter(f => f.file.name.match(/\.(md|markdown|txt)$/i));
-    const imgFiles = fileObjs.filter(f => f.file.name.match(/\.(png|jpe?g|gif|svg|webp|bmp)$/i));
-
-    if (mdFiles.length === 0) {
-      // If it's only images, but they dropped it outside the textarea (since textarea handles its own drop)
-      if (imgFiles.length > 0 && _activeDocId) {
-        let content = Editor.getContent();
-        for (const img of imgFiles) {
-          try {
-            const base64Data = await compressImage(img.file);
-            const ext = img.file.name.split('.').pop() || 'png';
-            const localUri = await Storage.saveAsset(base64Data, ext);
-            content += `\n![${img.file.name}](${localUri})\n`;
-          } catch(err) {
-            console.error('Image compression failed', err);
-          }
-        }
-        Editor.setContent(content);
-        await Storage.updateDocContent(_activeDocId, content);
-        renderMarkdown(content);
-        return;
-      }
-
-      alert('No Markdown file found, please ensure it contains .md or .txt files.');
-      return;
-    }
-
-    // For each imported md file
-    for (const mdObj of mdFiles) {
-      try {
-        let mdText = await readFileAsText(mdObj.file);
-        
-        // Find image links in mdText: ![alt](url) or <img src="url">
-        const urlRegex = /!\[.*?\]\((.*?)\)|<img.*?src=["'](.*?)["']/gi;
-        let match;
-        const urlsToReplace = new Set();
-        while ((match = urlRegex.exec(mdText)) !== null) {
-          const url = match[1] || match[2];
-          if (url && !url.startsWith('http') && !url.startsWith('data:')) {
-            urlsToReplace.add(url);
-          }
-        }
-
-        for (const url of urlsToReplace) {
-          const cleanUrl = url.replace(/^\.\//, '');
-          // Find matching local image
-          const matchedImg = imgFiles.find(img => {
-            return img.path.endsWith(cleanUrl) || cleanUrl.endsWith(img.file.name);
-          });
-
-          if (matchedImg) {
-            try {
-              const base64Data = await compressImage(matchedImg.file);
-              const ext = matchedImg.file.name.split('.').pop() || 'png';
-              const localUri = await Storage.saveAsset(base64Data, ext);
-              // Globally replace this local link with our Asset Pool ref
-              mdText = mdText.split(url).join(localUri);
-            } catch(err) {
-              console.error('Image processing failed during import', err);
-            }
-          }
-        }
-
-        const title = mdObj.file.name.replace(/\.(md|markdown|txt)$/i, '');
-        const doc = await Storage.createDoc(title, mdText);
-        FolderTree.render();
-        loadDocument(doc.id);
-      } catch (err) {
-        console.error('Import file parsing error:', err);
-        alert('Import file parsing failed: ' + err.message);
-      }
-    }
-
-    if (dom.fileInput) dom.fileInput.value = '';
-  }
-
   // Bind drag-and-drop events (supports dragging .md / folders directly to the window to import and parse images with one click)
   function bindDragAndDropEvents() {
     let dragCounter = 0;
@@ -2033,7 +2917,7 @@ const Manager = (() => {
       if (!e.dataTransfer.types.includes('Files')) return; // Allow internal text drag-and-drop
       e.preventDefault();
       if (isOnlyImages(e.dataTransfer)) return; // Don't show full-screen overlay for purely image drags
-      
+
       dragCounter++;
       if (dragCounter === 1 && dom.dragOverlay) {
         dom.dragOverlay.style.display = 'flex';
@@ -2059,7 +2943,7 @@ const Manager = (() => {
     window.addEventListener('drop', async (e) => {
       if (!e.dataTransfer.types.includes('Files')) return;
       e.preventDefault();
-      
+
       if (!isOnlyImages(e.dataTransfer)) {
         dragCounter = 0;
         if (dom.dragOverlay) {
@@ -2073,81 +2957,76 @@ const Manager = (() => {
       }
     });
 
-    // Specifically handle dropping images directly into the textarea
-    dom.editorTextarea.addEventListener('dragover', (e) => {
-      if (e.dataTransfer.types.includes('Files')) {
-        e.preventDefault();
-      }
-    });
+  }
 
-    dom.editorTextarea.addEventListener('drop', async (e) => {
-      if (!e.dataTransfer.types.includes('Files')) return;
-      
-      const files = await getAllFiles(e.dataTransfer);
-      const imgFiles = files.filter(f => f.file.name.match(/\.(png|jpe?g|gif|svg|webp|bmp)$/i));
-      const otherFiles = files.filter(f => !f.file.name.match(/\.(png|jpe?g|gif|svg|webp|bmp)$/i));
-      
-      // If it's an image-only drag onto the textarea, insert them at the cursor
-      if (imgFiles.length > 0 && otherFiles.length === 0) {
-        e.preventDefault();
-        e.stopPropagation(); // Stop window drop from firing
-        
-        const startPos = dom.editorTextarea.selectionStart;
-        let content = Editor.getContent();
-        
-        let imgMarkdown = '';
-        for (const img of imgFiles) {
-          try {
-            const base64Data = await compressImage(img.file);
-            const ext = img.file.name.split('.').pop() || 'png';
-            const localUri = await Storage.saveAsset(base64Data, ext);
-            imgMarkdown += `\n![${img.file.name}](${localUri})\n`;
-          } catch(err) {
-            console.error('Image compression failed', err);
-          }
-        }
-        
-        content = content.substring(0, startPos) + imgMarkdown + content.substring(startPos);
-        Editor.setContent(content);
-        
-        if (_activeDocId) {
-          await Storage.updateDocContent(_activeDocId, content);
-          renderMarkdown(content);
-        }
-      }
-    });
+  // Handle dropping images directly into CodeMirror 6 editor
+  async function handleEditorDrop(e, view) {
+    if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return false;
+    const files = await getAllFiles(e.dataTransfer);
+    const imgFiles = files.filter(f => IMAGE_EXT_RE.test(f.file.name));
+    const otherFiles = files.filter(f => !IMAGE_EXT_RE.test(f.file.name));
 
-    // Handle pasting images from clipboard
-    dom.editorTextarea.addEventListener('paste', async (e) => {
-      if (!e.clipboardData || !e.clipboardData.items) return;
-      const items = e.clipboardData.items;
-      
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const file = items[i].getAsFile();
-          e.preventDefault(); // Stop default paste
-          
-          try {
-            const base64Data = await compressImage(file);
-            const ext = file.type.split('/')[1] || 'png';
-            const localUri = await Storage.saveAsset(base64Data, ext);
-            
-            const startPos = dom.editorTextarea.selectionStart;
-            let content = Editor.getContent();
-            const imgMarkdown = `![Pasted Image](${localUri})`;
-            content = content.substring(0, startPos) + imgMarkdown + content.substring(dom.editorTextarea.selectionEnd);
-            
-            Editor.setContent(content);
-            if (_activeDocId) {
-              await Storage.updateDocContent(_activeDocId, content);
-              renderMarkdown(content);
-            }
-          } catch(err) {
-            console.error('Failed to paste image', err);
-          }
+    if (imgFiles.length > 0 && otherFiles.length === 0) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      let imgMarkdown = '';
+      for (const img of imgFiles) {
+        try {
+          const localPath = await saveImageFile(img.file);
+          imgMarkdown += `\n![${img.file.name}](${localPath})\n`;
+        } catch (err) {
+          console.error('Image processing failed', err);
         }
       }
-    });
+
+      const dropPos = view ? view.posAtCoords({ x: e.clientX, y: e.clientY }) : null;
+      if (dropPos !== null) {
+        Editor.insertText(imgMarkdown, dropPos);
+      } else {
+        Editor.insertText(imgMarkdown);
+      }
+
+      if (_activeDocId) {
+        await Storage.updateDocContent(_activeDocId, Editor.getContent());
+        renderMarkdown(Editor.getContent());
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // Handle pasting images from clipboard into CodeMirror 6 editor
+  async function handleEditorPaste(e, view) {
+    if (!e.clipboardData || !e.clipboardData.items) return false;
+    const items = e.clipboardData.items;
+    let handled = false;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (!file) continue;
+        e.preventDefault();
+        handled = true;
+
+        try {
+          const blob = await compressImage(file);
+          const ext = file.type.split('/')[1] || 'png';
+          const localPath = await Storage.saveAsset(blob, ext);
+
+          const imgMarkdown = `![Pasted Image](${localPath})`;
+          Editor.insertText(imgMarkdown);
+
+          if (_activeDocId) {
+            await Storage.updateDocContent(_activeDocId, Editor.getContent());
+            renderMarkdown(Editor.getContent());
+          }
+        } catch (err) {
+          console.error('Failed to paste image', err);
+        }
+      }
+    }
+    return handled;
   }
 
   // Provide auxiliary rendering method for external calls

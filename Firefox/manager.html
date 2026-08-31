@@ -1,14 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <title>Everything MD</title>
   <link rel="stylesheet" href="lib/katex/katex.min.css">
   <style>
     /* ====== Base Reset ====== */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-    html, body {
+    html,
+    body {
       height: 100%;
       overflow: hidden;
     }
@@ -23,7 +31,9 @@
       flex-direction: column;
     }
 
-    .hidden { display: none !important; }
+    .hidden {
+      display: none !important;
+    }
 
     /* ====== Top Toolbar ====== */
     .toolbar {
@@ -60,20 +70,36 @@
       background: linear-gradient(135deg, #f8fafc, #f1f5f9);
       border-radius: 8px;
       border: 1px solid #e2e8f0;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
       flex-shrink: 0;
       margin-right: 2px;
     }
+
     .brand-icon span {
       position: absolute;
       font-size: 12px;
       line-height: 1;
       user-select: none;
-      filter: drop-shadow(0 1px 1px rgba(0,0,0,0.1));
+      filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.1));
     }
-    .brand-emoji-1 { top: 2px; left: 7px; z-index: 2; }
-    .brand-emoji-2 { bottom: 2px; left: 2px; z-index: 3; }
-    .brand-emoji-3 { bottom: 2px; right: 2px; z-index: 1; }
+
+    .brand-emoji-1 {
+      top: 2px;
+      left: 7px;
+      z-index: 2;
+    }
+
+    .brand-emoji-2 {
+      bottom: 2px;
+      left: 2px;
+      z-index: 3;
+    }
+
+    .brand-emoji-3 {
+      bottom: 2px;
+      right: 2px;
+      z-index: 1;
+    }
 
     .toolbar-center {
       flex: 1;
@@ -123,8 +149,14 @@
       line-height: 1.4;
     }
 
-    .tb:hover { background: #f9fafb; border-color: #b0b5bd; }
-    .tb:active { background: #f3f4f6; }
+    .tb:hover {
+      background: #f9fafb;
+      border-color: #b0b5bd;
+    }
+
+    .tb:active {
+      background: #f3f4f6;
+    }
 
     .tb-primary {
       background: #1a73e8;
@@ -132,7 +164,10 @@
       color: #ffffff;
     }
 
-    .tb-primary:hover { background: #1557b0; border-color: #1557b0; }
+    .tb-primary:hover {
+      background: #1557b0;
+      border-color: #1557b0;
+    }
 
     /* ====== Main Container ====== */
     .main-container {
@@ -300,17 +335,72 @@
       white-space: nowrap;
     }
 
+    /* ====== Split Layout Container ====== */
+    .split-container {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
     /* ====== Editor Pane ====== */
     .editor-pane {
-      flex: 1;
+      width: 50%;
+      min-width: 180px;
       display: flex;
       flex-direction: column;
-      border-right: 1px solid #e5e7eb;
-      min-width: 0;
       background: #ffffff;
+      position: relative;
+      flex-shrink: 0;
     }
 
     .editor-pane.collapsed {
+      display: none;
+    }
+
+    /* ====== Split Pane Resizer (IDE Style) ====== */
+    .pane-resizer {
+      width: 6px;
+      background: #f3f4f6;
+      border-left: 1px solid #e5e7eb;
+      border-right: 1px solid #e5e7eb;
+      cursor: col-resize;
+      user-select: none;
+      flex-shrink: 0;
+      position: relative;
+      transition: background 0.15s, border-color 0.15s;
+      z-index: 10;
+      touch-action: none;
+    }
+
+    .pane-resizer::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 2px;
+      height: 24px;
+      border-radius: 1px;
+      background: #d1d5db;
+      transition: background 0.15s, height 0.15s;
+    }
+
+    .pane-resizer:hover,
+    .pane-resizer.dragging {
+      background: #3b82f6;
+      border-color: #2563eb;
+    }
+
+    .pane-resizer:hover::after,
+    .pane-resizer.dragging::after {
+      background: #ffffff;
+      height: 36px;
+    }
+
+    .pane-resizer.collapsed {
       display: none;
     }
 
@@ -372,39 +462,83 @@
       position: relative;
     }
 
-    .line-numbers {
-      width: 36px;
-      padding: 10px 4px 10px 0;
-      text-align: right;
-      font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
-      font-size: 12px;
-      line-height: 1.6;
-      color: #d1d5db;
-      background: #fafbfc;
-      border-right: 1px solid #f3f4f6;
+    .editor-container {
+      flex: 1;
+      height: 100%;
+      width: 100%;
       overflow: hidden;
-      pointer-events: none;
-      white-space: pre;
-      user-select: none;
+      display: flex;
+      flex-direction: column;
     }
 
-    #editorTextarea {
-      flex: 1;
-      resize: none;
-      border: none;
-      outline: none;
-      padding: 10px 14px;
+    /* ====== CodeMirror 6 Editor Theme ====== */
+    .cm-editor {
+      height: 100%;
       font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
       font-size: 13px;
       line-height: 1.6;
-      color: #1f2937;
       background: #ffffff;
-      tab-size: 2;
-      white-space: pre-wrap;
-      word-wrap: break-word;
+      color: #1f2937;
     }
 
-    #editorTextarea::placeholder {
+    .cm-editor.cm-focused {
+      outline: none;
+    }
+
+    .cm-scroller {
+      overflow: auto;
+      font-family: inherit;
+    }
+
+    .cm-content {
+      padding: 10px 14px;
+      tab-size: 2;
+    }
+
+    .cm-line {
+      padding: 0;
+    }
+
+    .cm-gutters {
+      background: #fafbfc;
+      border-right: 1px solid #f3f4f6;
+      color: #9ca3af;
+      font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .cm-lineNumbers .cm-gutterElement {
+      padding: 0 8px 0 10px;
+      min-width: 24px;
+      text-align: right;
+    }
+
+    .cm-activeLineGutter {
+      background-color: #f3f4f6;
+      color: #1f2937;
+      font-weight: 600;
+    }
+
+    .cm-activeLine {
+      background-color: rgba(243, 244, 246, 0.5);
+    }
+
+    .cm-cursor,
+    .cm-dropCursor {
+      border-left-color: #1f2937;
+      border-left-width: 2px;
+    }
+
+    .cm-selectionBackground,
+    ::selection {
+      background-color: #dbeafe !important;
+    }
+
+    .cm-focused .cm-selectionBackground {
+      background-color: #bfdbfe !important;
+    }
+
+    .cm-placeholder {
       color: #d1d5db;
     }
 
@@ -427,19 +561,65 @@
     }
 
     /* ====== Markdown Typography (md-body) ====== */
-    .md-body h1 { font-size: 26px; font-weight: 700; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
-    .md-body h2 { font-size: 22px; font-weight: 600; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #f0f1f3; }
-    .md-body h3 { font-size: 18px; font-weight: 600; margin: 24px 0 10px; }
-    .md-body h4 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
-    .md-body h5 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; }
-    .md-body h6 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; color: #6b7280; }
+    .md-body h1 {
+      font-size: 26px;
+      font-weight: 700;
+      margin: 32px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e5e7eb;
+    }
 
-    .md-body p { margin: 10px 0; line-height: 1.7; font-size: 15px; }
+    .md-body h2 {
+      font-size: 22px;
+      font-weight: 600;
+      margin: 28px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #f0f1f3;
+    }
 
-    .md-body a { color: #1a73e8; text-decoration: none; }
-    .md-body a:hover { text-decoration: underline; }
+    .md-body h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 24px 0 10px;
+    }
 
-    .md-body strong { font-weight: 600; }
+    .md-body h4 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 20px 0 8px;
+    }
+
+    .md-body h5 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 18px 0 6px;
+    }
+
+    .md-body h6 {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 16px 0 6px;
+      color: #6b7280;
+    }
+
+    .md-body p {
+      margin: 10px 0;
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    .md-body a {
+      color: #1a73e8;
+      text-decoration: none;
+    }
+
+    .md-body a:hover {
+      text-decoration: underline;
+    }
+
+    .md-body strong {
+      font-weight: 600;
+    }
 
     .md-body blockquote {
       margin: 12px 0;
@@ -455,9 +635,20 @@
       margin: 24px 0;
     }
 
-    .md-body ul, .md-body ol { margin: 8px 0; padding-left: 24px; }
-    .md-body li { margin: 4px 0; }
-    .md-body li > ul, .md-body li > ol { margin: 2px 0; }
+    .md-body ul,
+    .md-body ol {
+      margin: 8px 0;
+      padding-left: 24px;
+    }
+
+    .md-body li {
+      margin: 4px 0;
+    }
+
+    .md-body li>ul,
+    .md-body li>ol {
+      margin: 2px 0;
+    }
 
     .md-body code {
       font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
@@ -493,7 +684,8 @@
       font-size: 14px;
     }
 
-    .md-body th, .md-body td {
+    .md-body th,
+    .md-body td {
       border: 1px solid #e5e7eb;
       padding: 8px 12px;
       text-align: left;
@@ -504,12 +696,27 @@
       font-weight: 600;
     }
 
-    .md-body tr:nth-child(even) td { background: #fafbfc; }
+    .md-body tr:nth-child(even) td {
+      background: #fafbfc;
+    }
 
     .md-body img {
       max-width: 100%;
       height: auto;
       border-radius: 4px;
+    }
+
+    /* An image alone in its paragraph is a figure, not inline content. Left inline it
+       sits on the text baseline (uneven gap below it) and hugs the left edge whenever
+       it is narrower than the column, so two screenshots land on different axes purely
+       because of their own pixel width. Block + auto margins puts every one on the same
+       axis; margin-block:0 leaves the <p> margin as the single source of vertical space.
+       The class is applied in renderMarkdown: injectSourceLines prepends a .sync-marker
+       span to every paragraph, so no CSS selector can express "alone in its paragraph". */
+    .md-body img.md-block-img {
+      display: block;
+      margin-inline: auto;
+      margin-block: 0;
     }
 
     .md-body .katex-display {
@@ -518,9 +725,26 @@
     }
 
     /* ====== Highlight Marks ====== */
-    mark.hl-yellow { background: #fef3c7; padding: 1px 2px; border-radius: 2px; }
-    mark.hl-green  { background: #d1fae5; padding: 1px 2px; border-radius: 2px; }
-    mark.hl-blue   { background: #dbeafe; padding: 1px 2px; border-radius: 2px; }
+    /* Scoped to the preview so they can't collide with search-result marks elsewhere. */
+    #mdBody mark.hl-yellow {
+      background: #fef3c7;
+      padding: 1px 2px;
+      border-radius: 2px;
+    }
+
+    #mdBody mark.hl-green {
+      background: #d1fae5;
+      padding: 1px 2px;
+      border-radius: 2px;
+    }
+
+    /* Deliberately not #dbeafe — that is the ::selection colour, which would make a blue
+       highlight indistinguishable from selected text. */
+    #mdBody mark.hl-blue {
+      background: #bae6fd;
+      padding: 1px 2px;
+      border-radius: 2px;
+    }
 
     /* ====== Image Interaction & Toolbar ====== */
     .md-body img {
@@ -528,14 +752,17 @@
       cursor: grab;
       position: relative;
     }
+
     .md-body img:hover {
       transform: scale(1.02);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
+
     .md-body img.active {
       outline: 3px solid #1a73e8;
-      box-shadow: 0 6px 16px rgba(26,115,232,0.2);
+      box-shadow: 0 6px 16px rgba(26, 115, 232, 0.2);
     }
+
     .md-body img.dragging {
       opacity: 0.5;
       cursor: grabbing;
@@ -548,11 +775,14 @@
       margin: 8px 0;
       position: relative;
     }
+
     .drop-indicator::before {
       content: '';
       position: absolute;
-      left: -4px; top: -3px;
-      width: 8px; height: 8px;
+      left: -4px;
+      top: -3px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: #1a73e8;
     }
@@ -566,13 +796,15 @@
       backdrop-filter: blur(8px);
       border: 1px solid rgba(229, 231, 235, 0.8);
       border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
       z-index: 400;
       transition: opacity 0.2s;
     }
+
     .image-toolbar.hidden {
       display: none;
     }
+
     .img-tb-btn {
       border: none;
       background: #ffffff;
@@ -587,10 +819,12 @@
       color: #374151;
       transition: background 0.15s, color 0.15s;
     }
+
     .img-tb-btn:hover {
       background: #f3f4f6;
       color: #1a73e8;
     }
+
     .img-tb-btn.danger:hover {
       color: #dc2626;
       background: #fee2e2;
@@ -620,7 +854,7 @@
       background: #ffffff;
       border: 1px solid #e5e7eb;
       border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
       z-index: 200;
     }
 
@@ -670,14 +904,16 @@
 
     /* ====== Highlight Floating Bubble ====== */
     .highlight-bubble {
-      position: absolute;
+      /* Fixed, not absolute: #previewPane scrolls independently of the page, so the bubble is
+         positioned straight from getBoundingClientRect() viewport coordinates. */
+      position: fixed;
       display: flex;
       gap: 4px;
       padding: 4px 6px;
       background: #ffffff;
       border: 1px solid #e5e7eb;
       border-radius: 4px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
       z-index: 300;
     }
 
@@ -694,17 +930,33 @@
       transition: opacity 0.1s;
     }
 
-    .hl-btn:hover { opacity: 0.7; }
-    .hl-btn.hl-yellow { background: #fef3c7; color: #92400e; }
-    .hl-btn.hl-green  { background: #d1fae5; color: #065f46; }
-    .hl-btn.hl-blue   { background: #dbeafe; color: #1e40af; }
+    .hl-btn:hover {
+      opacity: 0.7;
+    }
+
+    .hl-btn.hl-yellow {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .hl-btn.hl-green {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .hl-btn.hl-blue {
+      background: #dbeafe;
+      color: #1e40af;
+    }
 
     /* ====== Full-screen Drag Overlay ====== */
     .drag-overlay {
       display: none;
       position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       background: rgba(26, 115, 232, 0.06);
       border: 3px dashed #1a73e8;
       z-index: 9999;
@@ -740,22 +992,53 @@
 
     /* ====== Responsive Breakpoints ====== */
     @media (max-width: 900px) {
-      .sidebar { width: 180px; min-width: 180px; }
+      .sidebar {
+        width: 180px;
+        min-width: 180px;
+      }
     }
 
     @media (max-width: 700px) {
-      .sidebar { width: 0; min-width: 0; border-right: none; }
-      .editor-pane { display: none; }
+      .sidebar {
+        width: 0;
+        min-width: 0;
+        border-right: none;
+      }
+
+      .editor-pane {
+        display: none;
+      }
     }
 
     /* ====== Print Styles (PDF Export) ====== */
+    /* Firefox paints its own title / URL / date / page-number into the page
+       margin box, so zeroing the margin is what suppresses them. The paper
+       margin is recreated as padding on .preview-inner below. */
+    @page {
+      margin: 0;
+    }
+
     @media print {
-      body { background: #ffffff; overflow: visible; }
+      body {
+        background: #ffffff;
+        overflow: visible;
+      }
 
-      .toolbar, .sidebar, .editor-pane,
-      .highlight-bubble, .drag-overlay, .search-results { display: none !important; }
+      .toolbar,
+      .sidebar,
+      .editor-pane,
+      .pane-resizer,
+      .highlight-bubble,
+      .drag-overlay,
+      .search-results {
+        display: none !important;
+      }
 
-      .main-container { display: block; overflow: visible; }
+      .main-container,
+      .split-container {
+        display: block;
+        overflow: visible;
+      }
 
       .preview-pane {
         overflow: visible;
@@ -765,7 +1048,7 @@
       .preview-inner {
         max-width: 100%;
         margin: 0;
-        padding: 0;
+        padding: 15mm 14mm;
         border: none;
         border-radius: 0;
       }
@@ -777,17 +1060,40 @@
         page-break-inside: avoid;
       }
 
-      .md-body table { page-break-inside: avoid; }
+      .md-body table {
+        page-break-inside: avoid;
+      }
 
-      .md-body h1, .md-body h2, .md-body h3,
-      .md-body h4, .md-body h5, .md-body h6 { page-break-after: avoid; }
+      .md-body h1,
+      .md-body h2,
+      .md-body h3,
+      .md-body h4,
+      .md-body h5,
+      .md-body h6 {
+        page-break-after: avoid;
+      }
 
-      .md-body img { page-break-inside: avoid; }
+      /* Measured: break-inside on the image itself does NOT stop Firefox splitting it.
+         Once .md-block-img makes the image a block box, the fragmenter cuts the
+         containing block, so the guard has to sit on the paragraph. Scoped to
+         image-only paragraphs so prose still breaks across pages normally. An image
+         taller than one page still fragments — unavoidable, and nothing is lost. */
+      .md-body img {
+        page-break-inside: avoid;
+      }
 
-      a[href]::after { content: none !important; }
+      .md-body p.md-figure {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      a[href]::after {
+        content: none !important;
+      }
     }
   </style>
 </head>
+
 <body>
 
   <!-- Top Toolbar -->
@@ -808,7 +1114,6 @@
       <button class="tb" id="newDocBtn">+ Document</button>
       <button class="tb" id="newFolderBtn">+ Folder</button>
       <button class="tb" id="importBtn">Import</button>
-      <button class="tb" id="toggleViewBtn" title="Toggle Edit/Preview">Split</button>
       <button class="tb tb-primary" id="downloadMdBtn">Export MD</button>
       <button class="tb tb-primary" id="exportPdfBtn">Export PDF</button>
     </div>
@@ -830,37 +1135,46 @@
       </div>
     </aside>
 
-    <!-- Editor Pane -->
-    <div class="editor-pane" id="editorPane">
-      <div class="editor-header">
-        <input type="text" class="doc-title-input" id="docTitleInput" placeholder="Document title...">
-      </div>
-      <div class="editor-toolbar">
-        <button class="ed-btn" id="boldBtn" title="Bold (Ctrl+B)"><b>B</b></button>
-        <button class="ed-btn" id="italicBtn" title="Italic (Ctrl+I)"><i>I</i></button>
-        <button class="ed-btn" id="codeBtn" title="Code">&lt;/&gt;</button>
-        <button class="ed-btn" id="linkBtn" title="Link">Link</button>
-        <button class="ed-btn" id="latexBtn" title="LaTeX Formula">Math</button>
-      </div>
-      <div class="editor-body">
-        <div class="line-numbers" id="lineNumbers">1</div>
-        <textarea id="editorTextarea" placeholder="Start writing Markdown..." spellcheck="false"></textarea>
-      </div>
-    </div>
+    <!-- Split Layout Container -->
+    <div class="split-container" id="splitContainer">
 
-    <!-- Preview Pane -->
-    <div class="preview-pane" id="previewPane">
-      <div class="preview-inner">
-        <div class="md-body" id="mdBody">
-          <div class="empty-state" id="emptyState">
-                        <p style="font-size: 15px; font-weight: 600; color: #374151;">Select or create a document to start editing</p>
-            <p style="font-size: 12px; color: #9ca3af; margin-top: 6px;">
-              Click the document list on the left, or use the <b>+ Document</b> / <b>Import</b> buttons in the toolbar to create a new document.<br>
-              You can also directly drag and drop <b>.md</b> files into this window.
-            </p>
+      <!-- Editor Pane -->
+      <div class="editor-pane" id="editorPane">
+        <div class="editor-header">
+          <input type="text" class="doc-title-input" id="docTitleInput" placeholder="Document title...">
+        </div>
+        <div class="editor-toolbar">
+          <button class="ed-btn" id="boldBtn" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button class="ed-btn" id="italicBtn" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button class="ed-btn" id="codeBtn" title="Code">&lt;/&gt;</button>
+          <button class="ed-btn" id="linkBtn" title="Link">Link</button>
+          <button class="ed-btn" id="latexBtn" title="LaTeX Formula">Math</button>
+        </div>
+        <div class="editor-body">
+          <div id="editorContainer" class="editor-container"></div>
+        </div>
+      </div>
+
+      <!-- Draggable Split Resizer -->
+      <div class="pane-resizer" id="paneResizer" title="Drag to resize split panes (Double-click to reset 50/50)"></div>
+
+      <!-- Preview Pane -->
+      <div class="preview-pane" id="previewPane">
+        <div class="preview-inner">
+          <div class="md-body" id="mdBody">
+            <div class="empty-state" id="emptyState">
+              <p style="font-size: 15px; font-weight: 600; color: #374151;">Select or create a document to start editing
+              </p>
+              <p style="font-size: 12px; color: #9ca3af; margin-top: 6px;">
+                Click the document list on the left, or use the <b>+ Document</b> / <b>Import</b> buttons in the toolbar
+                to create a new document.<br>
+                You can also directly drag and drop <b>.md</b> files into this window.
+              </p>
+            </div>
           </div>
         </div>
       </div>
+
     </div>
 
   </div>
@@ -885,7 +1199,7 @@
   <!-- Full-screen Drag Prompt Overlay -->
   <div id="dragOverlay" class="drag-overlay">
     <div class="drag-overlay-inner">
-            <p>Release mouse to import Markdown</p>
+      <p>Release mouse to import Markdown</p>
       <p>Supports .md / .markdown / .txt files</p>
     </div>
   </div>
@@ -894,11 +1208,13 @@
   <input type="file" id="fileInput" accept=".md,.markdown,.txt,image/*" multiple style="display: none;">
 
   <!-- Third-party libraries -->
+  <script src="lib/codemirror.bundle.js"></script>
   <script src="lib/marked.min.js"></script>
   <script src="lib/katex/katex.min.js"></script>
   <script src="lib/katex/auto-render.min.js"></script>
-  <script src="lib/jszip.min.js"></script>
+  <script src="lib/7zz.umd.js"></script>
   <script src="lib/dexie.min.js"></script>
   <script src="app.js"></script>
 </body>
+
 </html>
