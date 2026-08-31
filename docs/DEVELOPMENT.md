@@ -1,4 +1,7 @@
-# AI Development Guide & Workflow
+# Development Guide
+
+Module interfaces, working principles, and project context for contributors.
+
 
 ## Workflow & Development Principles
 - **Fail Fast**: Validate inputs and state early. Throw descriptive errors immediately upon invalid conditions.
