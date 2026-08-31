@@ -1,6 +1,6 @@
 <div align="center">
 
-# Everything MD
+# Everything Markdown
 
 **A local-first, universal Markdown workspace for Firefox — with one-click Google Gemini conversation export.**
 
@@ -13,7 +13,7 @@
 
 ---
 
-Everything MD turns your browser into a self-contained Markdown editor and library. It captures a
+Everything Markdown turns your browser into a self-contained Markdown editor and library. It captures a
 Google Gemini chat into clean Markdown in one click, then gives you a real editor to organise,
 annotate, and re-export it. Everything lives in your browser — no account, no server, no tracking.
 
@@ -50,8 +50,8 @@ annotate, and re-export it. Everything lives in your browser — no account, no 
 ### From source (development)
 
 ```bash
-git clone https://github.com/nyaaorick/Everything-MD.git
-cd Everything-MD
+git clone https://github.com/nyaaorick/Everything-Markdown.git
+cd Everything-Markdown
 
 # Load it live in Firefox
 npm install --global web-ext
@@ -70,8 +70,8 @@ pick `Firefox/manifest.json`.
 ## Usage
 
 1. Open a conversation on [gemini.google.com](https://gemini.google.com).
-2. Click the **Everything MD** toolbar icon → **Extract & Save to Manager** (or **Download Markdown File**).
-3. Click **Open Everything MD** any time to browse, edit, highlight, and re-export your library.
+2. Click the **Everything Markdown** toolbar icon → **Extract & Save to Manager** (or **Download Markdown File**).
+3. Click **Open Everything Markdown** any time to browse, edit, highlight, and re-export your library.
 
 ## Tech stack
 

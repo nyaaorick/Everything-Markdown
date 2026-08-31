@@ -3,7 +3,7 @@
 # Exit on error
 set -e
 
-echo "Starting build process for Everything MD..."
+echo "Starting build process for Everything Markdown..."
 
 echo "Cleaning up system caches and development artifacts..."
 find . -name '.DS_Store' -type f -delete
