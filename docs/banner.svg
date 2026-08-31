@@ -4,35 +4,74 @@
       <stop offset="0" stop-color="#ffffff"/>
       <stop offset="1" stop-color="#f4f6f9"/>
     </linearGradient>
-    <linearGradient id="badge" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="em-badge" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#f8fafc"/>
-      <stop offset="1" stop-color="#f1f5f9"/>
+      <stop offset="1" stop-color="#eef2f7"/>
+    </linearGradient>
+    <linearGradient id="em-box" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6b578"/>
+      <stop offset="1" stop-color="#cf9455"/>
+    </linearGradient>
+    <linearGradient id="em-pencil" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8cc55"/>
+      <stop offset="1" stop-color="#efb738"/>
     </linearGradient>
     <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
       <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0b1a2b" flood-opacity="0.14"/>
     </filter>
-    <filter id="glyph" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#0b1a2b" flood-opacity="0.10"/>
+    <filter id="em-lift" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0b1a2b" flood-opacity="0.14"/>
     </filter>
-    <clipPath id="badgeClip">
-      <rect x="72" y="90" width="140" height="140" rx="40"/>
-    </clipPath>
+    <clipPath id="em-clip"><rect x="16" y="16" width="224" height="224" rx="60"/></clipPath>
   </defs>
 
   <!-- card -->
   <rect x="1" y="1" width="1278" height="318" rx="22" fill="url(#bg)" stroke="#e4e8ee"/>
   <rect x="1" y="1" width="1278" height="318" rx="22" fill="none" stroke="#1a73e8" stroke-opacity="0.08"/>
 
-  <!-- brand badge: mirrors .brand-icon (28px box, 8px radius, #e2e8f0 border) scaled x5 -->
-  <g filter="url(#soft)">
-    <rect x="72" y="90" width="140" height="140" rx="40" fill="url(#badge)" stroke="#e2e8f0" stroke-width="5"/>
-  </g>
-
-  <!-- emoji stacked in the corners, matching .brand-emoji-1/2/3; clipped to the badge -->
-  <g clip-path="url(#badgeClip)" font-size="52" filter="url(#glyph)" text-anchor="middle" style="dominant-baseline:central" font-family="'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif">
-    <text x="159" y="184">✨</text>
-    <text x="142" y="128">🗂️</text>
-    <text x="125" y="184">📝</text>
+  <!-- brand icon (single vector, shared with Firefox/icons/icon.svg) -->
+  <g transform="translate(62,80) scale(0.625)">
+    <g filter="url(#soft)">
+      <rect x="16" y="16" width="224" height="224" rx="60" fill="url(#em-badge)" stroke="#e2e8f0" stroke-width="6"/>
+    </g>
+    <g clip-path="url(#em-clip)">
+      <g filter="url(#em-lift)" transform="translate(62,34)">
+        <g stroke="#d2dae2" stroke-width="2">
+          <rect x="4"  y="12" width="30" height="46" rx="4" fill="#ffffff"/>
+          <rect x="33" y="6"  width="30" height="52" rx="4" fill="#ffffff"/>
+          <rect x="62" y="14" width="30" height="44" rx="4" fill="#ffffff"/>
+        </g>
+        <rect x="6"  y="8"  width="24" height="12" rx="3" fill="#ef5350"/>
+        <rect x="35" y="2"  width="24" height="12" rx="3" fill="#42a5f5"/>
+        <rect x="64" y="10" width="24" height="12" rx="3" fill="#ffca28"/>
+        <path d="M0,44 L96,44 L90,42 L88,92 Q88,98 82,98 L14,98 Q8,98 8,92 L6,42 Z" fill="url(#em-box)"/>
+        <path d="M-2,40 L98,40 L96,48 L0,48 Z" fill="#c68c4d"/>
+        <path d="M16,62 L80,62" stroke="#b17c3f" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+      </g>
+      <g filter="url(#em-lift)" transform="translate(40,116) rotate(-6)">
+        <rect x="0" y="0" width="78" height="94" rx="9" fill="#ffffff" stroke="#dfe4ea" stroke-width="2"/>
+        <g fill="#c4ccd4">
+          <rect x="12" y="15" width="54" height="6" rx="3"/>
+          <rect x="12" y="31" width="54" height="6" rx="3"/>
+          <rect x="12" y="47" width="42" height="6" rx="3"/>
+          <rect x="12" y="63" width="50" height="6" rx="3"/>
+        </g>
+        <g transform="translate(-10,92) rotate(-34)">
+          <rect x="12"  y="0" width="66" height="19" fill="url(#em-pencil)"/>
+          <rect x="12"  y="12" width="66" height="7" fill="#e2a92f"/>
+          <path d="M78,0 L96,9.5 L78,19 Z" fill="#f2ddb9"/>
+          <path d="M90,5.5 L96,9.5 L90,13.5 Z" fill="#4a4a4a"/>
+          <rect x="0"  y="0" width="12" height="19" fill="#cfd6dd"/>
+          <rect x="-14" y="0" width="14" height="19" rx="5" fill="#f28fb3"/>
+        </g>
+      </g>
+      <g filter="url(#em-lift)" transform="translate(150,118)">
+        <path d="M34,6 Q37.5,40.5 62,44 Q37.5,47.5 34,82 Q30.5,47.5 6,44 Q30.5,40.5 34,6 Z" fill="#f5b301"/>
+        <path d="M34,20 Q35.8,42.2 48,44 Q35.8,45.8 34,68 Q32.2,45.8 20,44 Q32.2,42.2 34,20 Z" fill="#ffd35c"/>
+        <path d="M62,58 Q63.6,72.4 78,74 Q63.6,75.6 62,90 Q60.4,75.6 46,74 Q60.4,72.4 62,58 Z" fill="#f5b301"/>
+        <path d="M12,54 Q13.2,64.8 24,66 Q13.2,67.2 12,78 Q10.8,67.2 0,66 Q10.8,64.8 12,54 Z" fill="#f5b301"/>
+      </g>
+    </g>
   </g>
 
   <!-- wordmark -->

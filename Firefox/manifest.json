@@ -7,11 +7,17 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg",
+    "128": "icons/icon.svg"
+  },
   "background": {
     "scripts": ["background.js"]
   },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon.svg"
   },
   "browser_specific_settings": {
     "gecko": {

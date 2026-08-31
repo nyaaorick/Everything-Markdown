@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Everything Markdown">
+  <defs>
+    <linearGradient id="em-badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#eef2f7"/>
+    </linearGradient>
+    <linearGradient id="em-box" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6b578"/>
+      <stop offset="1" stop-color="#cf9455"/>
+    </linearGradient>
+    <linearGradient id="em-pencil" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8cc55"/>
+      <stop offset="1" stop-color="#efb738"/>
+    </linearGradient>
+    <filter id="em-soft" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0b1a2b" flood-opacity="0.16"/>
+    </filter>
+    <filter id="em-lift" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#0b1a2b" flood-opacity="0.14"/>
+    </filter>
+    <clipPath id="em-clip"><rect x="16" y="16" width="224" height="224" rx="60"/></clipPath>
+  </defs>
+
+  <!-- badge: the in-app .brand-icon, drawn as vector -->
+  <g filter="url(#em-soft)">
+    <rect x="16" y="16" width="224" height="224" rx="60" fill="url(#em-badge)" stroke="#e2e8f0" stroke-width="6"/>
+  </g>
+
+  <g clip-path="url(#em-clip)">
+
+    <!-- 🗂  card-index box -->
+    <g filter="url(#em-lift)" transform="translate(62,34)">
+      <!-- divider cards -->
+      <g stroke="#d2dae2" stroke-width="2">
+        <rect x="4"  y="12" width="30" height="46" rx="4" fill="#ffffff"/>
+        <rect x="33" y="6"  width="30" height="52" rx="4" fill="#ffffff"/>
+        <rect x="62" y="14" width="30" height="44" rx="4" fill="#ffffff"/>
+      </g>
+      <rect x="6"  y="8"  width="24" height="12" rx="3" fill="#ef5350"/>
+      <rect x="35" y="2"  width="24" height="12" rx="3" fill="#42a5f5"/>
+      <rect x="64" y="10" width="24" height="12" rx="3" fill="#ffca28"/>
+      <!-- box -->
+      <path d="M0,44 L96,44 L90,42 L88,92 Q88,98 82,98 L14,98 Q8,98 8,92 L6,42 Z" fill="url(#em-box)"/>
+      <path d="M-2,40 L98,40 L96,48 L0,48 Z" fill="#c68c4d"/>
+      <path d="M16,62 L80,62" stroke="#b17c3f" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+    </g>
+
+    <!-- 📝  memo + pencil -->
+    <g filter="url(#em-lift)" transform="translate(40,116) rotate(-6)">
+      <rect x="0" y="0" width="78" height="94" rx="9" fill="#ffffff" stroke="#dfe4ea" stroke-width="2"/>
+      <g fill="#c4ccd4">
+        <rect x="12" y="15" width="54" height="6" rx="3"/>
+        <rect x="12" y="31" width="54" height="6" rx="3"/>
+        <rect x="12" y="47" width="42" height="6" rx="3"/>
+        <rect x="12" y="63" width="50" height="6" rx="3"/>
+      </g>
+      <g transform="translate(-10,92) rotate(-34)">
+        <rect x="12"  y="0" width="66" height="19" fill="url(#em-pencil)"/>
+        <rect x="12"  y="12" width="66" height="7" fill="#e2a92f"/>
+        <path d="M78,0 L96,9.5 L78,19 Z" fill="#f2ddb9"/>
+        <path d="M90,5.5 L96,9.5 L90,13.5 Z" fill="#4a4a4a"/>
+        <rect x="0"  y="0" width="12" height="19" fill="#cfd6dd"/>
+        <rect x="-14" y="0" width="14" height="19" rx="5" fill="#f28fb3"/>
+      </g>
+    </g>
+
+    <!-- ✨  sparkles -->
+    <g filter="url(#em-lift)" transform="translate(150,118)">
+      <path d="M34,6 Q37.5,40.5 62,44 Q37.5,47.5 34,82 Q30.5,47.5 6,44 Q30.5,40.5 34,6 Z" fill="#f5b301"/>
+      <path d="M34,20 Q35.8,42.2 48,44 Q35.8,45.8 34,68 Q32.2,45.8 20,44 Q32.2,42.2 34,20 Z" fill="#ffd35c"/>
+      <path d="M62,58 Q63.6,72.4 78,74 Q63.6,75.6 62,90 Q60.4,75.6 46,74 Q60.4,72.4 62,58 Z" fill="#f5b301"/>
+      <path d="M12,54 Q13.2,64.8 24,66 Q13.2,67.2 12,78 Q10.8,67.2 0,66 Q10.8,64.8 12,54 Z" fill="#f5b301"/>
+    </g>
+
+  </g>
+</svg>
