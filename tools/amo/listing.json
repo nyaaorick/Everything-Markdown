@@ -1,0 +1,18 @@
+{
+  "addon_id": "everything-md@nyaaorick.com",
+  "categories": ["web-development", "privacy-security"],
+  "tags": ["chat", "google", "privacy"],
+  "summary": {
+    "en-US": "Save any Google Gemini chat as clean Markdown in one click, then organise, edit and export it in a fast, local-first Markdown workspace. No account, no servers, no tracking.",
+    "zh-CN": "一键将 Google Gemini 对话保存为干净的 Markdown，并在快速、本地优先的 Markdown 工作区中整理、编辑与再导出。无需账号，无服务器，无跟踪。"
+  },
+  "description": {
+    "en-US": "Everything Markdown is two tools in one: a one-click Google Gemini to Markdown exporter, and a full offline Markdown editor and library to keep everything you capture.\n\n▸ ONE-CLICK GEMINI EXPORT\n• Save the visible Gemini conversation as clean Markdown straight from the toolbar\n• Keeps headings, lists, tables and fenced code blocks intact\n• Optional metadata header (export time + source link)\n• Send it into the built-in manager, or download a .md file\n\n▸ A REAL MARKDOWN EDITOR\n• CodeMirror 6: syntax highlighting, line numbers, soft-wrap, slash commands, formatting toolbar, undo history\n• Resizable split-pane live preview\n• LaTeX math via KaTeX, GitHub-flavoured tables, task lists\n• Paste or drag images straight into a note\n• Export one .md, or a .7z bundle with images; print / export to PDF\n\n▸ ORGANISE EVERYTHING\n• Folder tree with drag-and-drop\n• Full-text search across every note\n• Bookmarks for quick access\n• Colour highlights on the preview that survive bold / italic / link edits\n\n▸ PRIVATE BY DESIGN\n• 100% local — everything is stored in your browser (IndexedDB)\n• No account, no server calls, no analytics, no tracking\n• Declared zero data collection\n\nMade for researchers, students, writers and developers who live in Markdown and want their AI chats, notes and docs in one private place.\n\nOpen source (MIT): https://github.com/nyaaorick/Everything-Markdown",
+    "zh-CN": "Everything Markdown 二合一：一键把 Google Gemini 对话导出为干净的 Markdown，再用一个完全离线的 Markdown 编辑器与资料库把它们保存下来。\n\n▸ 一键导出 GEMINI 对话\n• 在工具栏弹窗中，一键把当前 Gemini 对话保存为干净的 Markdown\n• 保留标题、列表、表格与代码块\n• 可选的元信息头（导出时间 + 来源链接）\n• 直接存入内置管理器，或下载 .md 文件\n\n▸ 真正好用的 MARKDOWN 编辑器\n• CodeMirror 6：语法高亮、行号、自动折行、斜杠命令、格式工具栏、撤销历史\n• 可拖动分栏的实时预览\n• 基于 KaTeX 的 LaTeX 公式、GFM 表格、任务列表\n• 图片可直接粘贴或拖入笔记\n• 导出单个 .md，或含图片的 .7z 压缩包；支持打印 / 导出 PDF\n\n▸ 全面整理\n• 支持拖放的文件夹树\n• 跨全部笔记的全文搜索\n• 书签快速访问\n• 预览区的彩色高亮，编辑加粗 / 斜体 / 链接后依然保留\n\n▸ 隐私优先\n• 100% 本地 —— 所有数据都存在你的浏览器里（IndexedDB）\n• 无账号、无服务器请求、无统计、无跟踪\n• 声明零数据收集\n\n为长期使用 Markdown 的研究者、学生、写作者与开发者而做，把 AI 对话、笔记与文档放在同一个私密的地方。\n\n开源（MIT）：https://github.com/nyaaorick/Everything-Markdown"
+  },
+  "screenshots": [
+    { "file": "docs/screenshot.png", "caption": "CodeMirror 6 editor with a resizable live preview — headings, tables, blockquotes and KaTeX math" },
+    { "file": "docs/screenshot-highlights.png", "caption": "Colour highlights on the preview, anchored to block + offset so they survive bold / italic / link edits" },
+    { "file": "docs/screenshot-search.png", "caption": "Folder tree and instant full-text search across every note" }
+  ]
+}

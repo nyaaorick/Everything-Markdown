@@ -114,8 +114,17 @@ Firefox/
   lib/                  Vendored dependencies (CodeMirror bundle, Dexie, marked, KaTeX, 7zz WASM)
 docs/DEVELOPMENT.md     Module interfaces and working principles
 docs/STORE_LISTING.md   Copy-paste text for the addons.mozilla.org listing
+tools/                  Release automation (render art, capture screenshots, AMO API)
+.claude/skills/release  The end-to-end release procedure
 test/                   Integration tests
 ```
+
+## Releasing
+
+`.claude/skills/release/SKILL.md` is the full procedure: clean up → bump
+`manifest.json` → `./build.sh` → `web-ext sign --channel listed` → refresh the
+AMO listing (`tools/amo/`) → regenerate art/screenshots (`tools/`). Everything
+scriptable is a script under [tools/](tools/).
 
 ## FAQ
 
