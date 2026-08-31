@@ -101,16 +101,18 @@ Everything Markdown 二合一：一键把 Google Gemini 对话导出为干净的
 
 ---
 
-## Categories
+## Categories  (set on AMO)
 
-- **Primary:** Web Development
-- **Secondary:** Other
+- `web-development`
+- `privacy-security`
 
-## Tags / keywords
+## Tags  (set on AMO)
+
+AMO only accepts tags from its fixed vocabulary (`GET /api/v5/addons/tags/`).
+Applicable ones:
 
 ```
-markdown, gemini, ai, export, notes, editor, note-taking, offline,
-local-first, privacy, katex, latex, math, pdf, codemirror, knowledge-base
+chat, google, privacy
 ```
 
 ## Support & homepage
